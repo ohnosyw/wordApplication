@@ -1,0 +1,10 @@
+{
+  "app": {
+    "bundleName": "com.example.worldapplication",
+    "vendor": "example",
+    "versionCode": 1000000,
+    "versionName": "1.0.0",
+    "icon": "$media:ic_corn",
+    "label": "$string:app_name"
+  }
+}
