@@ -187,11 +187,14 @@ struct LearningSessionPage {
         Column() { LoadingProgress().width(50).height(50).color('#4CAF50'); Text('生成任务中...').fontSize(16).fontColor('#666').margin({ top: 20 }) }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else if (this.wordQueue.length > 0) {
         Column() {
+          // ------------------ 🌟 状态标签 (修复版) ------------------
           Row() {
-            Text(this.currentProgress.repetition === 0 ? '新词' : '复习')
-              .fontSize(12).fontColor(this.currentProgress.repetition === 0 ? '#F44336' : '#2196F3')
-              .backgroundColor(this.currentProgress.repetition === 0 ? '#FFEBEE' : '#E3F2FD')
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+            Text(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '新词' : '复习')
+              .fontSize(12)
+              .fontColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#F44336' : '#2196F3')
+              .backgroundColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#FFEBEE' : '#E3F2FD')
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .borderRadius(10)
           }.width('100%').justifyContent(FlexAlign.End)
 
           Text(this.wordQueue[this.currentIndex].headWord).fontSize(40).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 10 })
