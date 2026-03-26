@@ -84,11 +84,16 @@ export struct MineHome {
             }
           }
           .width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ bottom: 20 })
-
-          // ---------------- 4. 菜单列表 (已断舍离) ----------------
+          
+          // ---------------- 4. 菜单列表 ----------------
           List() {
-            ListItem() { this.MenuItem("我的收藏", "去复习") }
-            // 错题本和全局设置已删除
+            ListItem() {
+              this.MenuItem("我的收藏", "去复习")
+            }
+            .onClick(() => {
+              // 🌟 新增：跳转到收藏夹页面
+              router.pushUrl({ url: 'pages/CollectionsPage' })
+            })
           }
           .backgroundColor(Color.White).width('90%').margin({ bottom: 20 }).borderRadius(10)
 
