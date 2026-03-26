@@ -1,7 +1,9 @@
 // entry/src/main/ets/pages/CollectionWordsPage.ets
 import router from '@ohos.router'
+import promptAction from '@ohos.promptAction'
 import { DataLoader } from '../utils/DataLoader'
 import { WordEntry } from '../model/WordModel'
+import { CollectionManager } from '../utils/CollectionManager'
 
 @Entry
 @Component
@@ -12,28 +14,82 @@ struct CollectionWordsPage {
   @State words: WordEntry[] = [];
   @State isLoading: boolean = true;
 
-  async aboutToAppear() {
-    // 🌟 修复点 1：明确指明参数类型为 string 或者是 string 数组
+  // 🌟 高级功能状态
+  @State isMasked: boolean = false;
+  @State dailyLimit: number = 20;
+
+  async onPageShow() {
+    this.isLoading = true;
     let params = router.getParams() as Record<string, string | string[]>;
     if (params) {
-      // 🌟 修复点 2：使用严格的方括号读取，并断言具体类型
       this.bookId = params['bookId'] as string;
       this.bookName = params['bookName'] as string;
-      this.wordIds = params['wordIds'] as string[];
 
-      // 加载该词书的完整数据，并过滤出被收藏的词
+      // 每次显示时从数据库拉取最新收藏（防止在背单词时取消了收藏）
+      let cols = await CollectionManager.getCollections(getContext(this));
+      if (cols[this.bookId]) {
+        this.wordIds = cols[this.bookId].wordIds;
+        this.dailyLimit = cols[this.bookId].dailyLimit || 20;
+      }
+
       let allWords = await DataLoader.loadWordBook(getContext(this), `${this.bookId}.json`);
       this.words = allWords.filter(w => this.wordIds.includes(w.content.word.wordId));
     }
     this.isLoading = false;
   }
 
+  // 🌟 右上角的专属设置菜单
+  @Builder SettingsMenu() {
+    Menu() {
+      MenuItem({ content: `设置每日复习量 (当前: ${this.dailyLimit})` })
+        .onClick(() => {
+          TextPickerDialog.show({
+            range: ['10', '20', '30', '50', '100', '全部'],
+            selected: 1,
+            onAccept: async (value: TextPickerResult) => {
+              let limitStr = (typeof value.value === 'string') ? value.value : value.value[0];
+              let limit = limitStr === '全部' ? 9999 : parseInt(limitStr);
+              this.dailyLimit = limit;
+              await CollectionManager.setDailyLimit(getContext(this), this.bookId, limit);
+              promptAction.showToast({ message: `每日复习量已设置为 ${limitStr}` });
+            }
+          })
+        })
+
+      MenuItem({ content: this.isMasked ? '取消遮挡释义' : '遮挡释义' })
+        .onClick(() => {
+          this.isMasked = !this.isMasked;
+        })
+
+      MenuItem({ content: '一键清空收藏词' })
+        .onClick(() => {
+          promptAction.showDialog({
+            title: '⚠ 危险操作',
+            message: '确定要清空本词书的所有收藏词吗？操作不可恢复。',
+            buttons: [
+              { text: '取消', color: '#999' },
+              { text: '确认清空', color: '#F44336' }
+            ]
+          }).then(async (res) => {
+            if (res.index === 1) {
+              await CollectionManager.clearCollection(getContext(this), this.bookId);
+              this.words = [];
+              this.wordIds = [];
+              promptAction.showToast({ message: '收藏词已清空' });
+            }
+          })
+        })
+    }
+  }
+
   build() {
     Column() {
-      // 导航栏
       Row() {
         Image($r('app.media.ic_back')).width(24).height(24).onClick(() => { router.back() })
         Text(this.bookName).fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 15 })
+        Blank()
+        // 🌟 设置图标，绑定下拉菜单
+        Image($r('app.media.ic_settings')).width(24).height(24).bindMenu(this.SettingsMenu)
       }.width('100%').padding(20).backgroundColor(Color.White)
 
       if (this.isLoading) {
@@ -41,20 +97,19 @@ struct CollectionWordsPage {
       } else if (this.words.length === 0) {
         Text('收藏夹是空的哦').fontSize(16).fontColor('#999').margin({ top: 100 })
       } else {
-        // 单词列表
         List({ space: 10 }) {
           ForEach(this.words, (word: WordEntry) => {
             ListItem() {
               Row() {
                 Text(word.headWord).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333').width('40%')
-                Text(word.content.word.content.trans ? word.content.word.content.trans[0].tranCn : '')
+                // 🌟 遮挡释义逻辑
+                Text(this.isMasked ? '*********' : (word.content.word.content.trans ? word.content.word.content.trans[0].tranCn : ''))
                   .fontSize(14).fontColor('#666').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               }.width('100%').padding(15).backgroundColor(Color.White).borderRadius(10)
             }
           })
         }.width('90%').layoutWeight(1).margin({ top: 15, bottom: 15 })
 
-        // 🌟 开始学习按钮：跳转到背单词界面，并带上专属的 Collection 参数
         Button('开始学习收藏单词')
           .width('90%').height(50).backgroundColor('#4CAF50').fontSize(18).margin({ bottom: 30 })
           .onClick(() => {

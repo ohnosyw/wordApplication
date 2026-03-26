@@ -54,12 +54,24 @@ struct LearningSessionPage {
   }
 
   onBackPress() {
-    if (!this.isCollectionMode) this.saveSessionToCache();
+    this.saveSessionToCache();
     return false;
   }
 
+  // 🌟 统一保存缓存/断点入口
   async saveSessionToCache() {
-    if (this.wordQueue.length === 0 || this.isCollectionMode) return;
+    if (this.wordQueue.length === 0) return;
+
+    if (this.isCollectionMode) {
+      // 🌟 收藏模式专属断点续传：记录当前正在背的这个词的 ID
+      if (this.currentIndex < this.wordQueue.length) {
+        let currentWordId = this.wordQueue[this.currentIndex].content.word.wordId;
+        await CollectionManager.setLastWordId(getContext(this), this.currentBookId, currentWordId);
+      }
+      return;
+    }
+
+    // 普通模式断点续传
     let sessionData: CacheData = {
       date: new Date().toDateString(),
       wordQueue: this.wordQueue,
@@ -78,23 +90,50 @@ struct LearningSessionPage {
 
   async loadWords() {
     this.isLoading = true;
-
-    // 🌟 修复点 1：消除 any
     let params = router.getParams() as Record<string, string | string[]>;
 
-    // 🌟 修复点 2：使用方括号精确读取
     if (params && params['mode'] === 'collection') {
+      // ----------- 模式 A：收藏夹特训模式 -----------
       this.isCollectionMode = true;
       this.currentBookId = params['bookId'] as string;
       this.currentBookName = params['bookName'] as string;
-      let targetWordIds = params['wordIds'] as string[];
+
+      let cols = await CollectionManager.getCollections(getContext(this));
+      let targetWordIds: string[] = [];
+      let dailyLimit = 20;
+      let lastWordId: string | undefined = undefined;
+
+      if (cols[this.currentBookId]) {
+        targetWordIds = cols[this.currentBookId].wordIds;
+        dailyLimit = cols[this.currentBookId].dailyLimit || 20;
+        lastWordId = cols[this.currentBookId].lastWordId;
+      }
 
       let allWords = await DataLoader.loadWordBook(getContext(this), `${this.currentBookId}.json`);
-      this.wordQueue = allWords.filter(w => targetWordIds.includes(w.content.word.wordId));
+      let collectionWords = allWords.filter(w => targetWordIds.includes(w.content.word.wordId));
 
-      this.wordQueue.sort(() => Math.random() - 0.5);
+      if (collectionWords.length > 0) {
+        // 🌟 核心：寻找上次退出的锚点
+        let startIndex = 0;
+        if (lastWordId) {
+          let idx = collectionWords.findIndex(w => w.content.word.wordId === lastWordId);
+          if (idx !== -1) startIndex = idx;
+        }
+
+        // 🌟 核心：从锚点开始，截取 dailyLimit 长度的队列，超出的部分进行首尾相接绕回
+        let finalQueue: WordEntry[] = [];
+        let count = Math.min(dailyLimit, collectionWords.length);
+        for (let i = 0; i < count; i++) {
+          let idx = (startIndex + i) % collectionWords.length;
+          finalQueue.push(collectionWords[idx]);
+        }
+
+        this.wordQueue = finalQueue;
+        this.sessionTotalReview = this.wordQueue.length;
+      }
 
     } else {
+      // ----------- 模式 B：正常的今日打卡模式 -----------
       let plan = AppStorage.get<PlanData>('studyPlan');
       if (!plan) { promptAction.showToast({ message: '计划异常' }); router.back(); return; }
 
@@ -123,7 +162,6 @@ struct LearningSessionPage {
           return;
         }
       }
-
       this.wordQueue = await WordService.generateTodayQueue(getContext(this), plan);
     }
 
@@ -140,10 +178,7 @@ struct LearningSessionPage {
           }
         }
         this.saveSessionToCache();
-      } else {
-        this.sessionTotalReview = this.wordQueue.length;
       }
-
       await this.prepareCurrentWord();
     } else {
       promptAction.showToast({ message: '太棒了！没有任务啦。' });
@@ -161,7 +196,6 @@ struct LearningSessionPage {
     } else {
       this.currentProgress = { wordId: wordId, repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: Date.now() }
     }
-
     this.isCurrentWordCollected = await CollectionManager.isCollected(getContext(this), this.currentBookId, wordId);
   }
 
@@ -214,7 +248,7 @@ struct LearningSessionPage {
       this.wordQueue.push(this.wordQueue[this.currentIndex]);
     }
     this.isShowDetails = true;
-    if (!this.isCollectionMode) this.saveSessionToCache();
+    this.saveSessionToCache();
   }
 
   async markAsWrong() {
@@ -245,7 +279,7 @@ struct LearningSessionPage {
     this.wordQueue.push(this.wordQueue[this.currentIndex]);
     this.lastAnswerIsKnown = false;
     promptAction.showToast({ message: '已标记为不认识，稍后将重新复习' });
-    if (!this.isCollectionMode) this.saveSessionToCache();
+    this.saveSessionToCache();
   }
 
   async nextWord() {
@@ -253,7 +287,7 @@ struct LearningSessionPage {
       this.currentIndex += 1;
       this.isShowDetails = false;
       await this.prepareCurrentWord();
-      if (!this.isCollectionMode) this.saveSessionToCache();
+      this.saveSessionToCache();
     } else {
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
 
@@ -262,6 +296,16 @@ struct LearningSessionPage {
         await UserManager.recordCheckIn(getContext(this));
         promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
       } else {
+        // 🌟 收藏模式完成：找到下一个准备要背的词的 ID 存起来，接力跑！
+        let cols = await CollectionManager.getCollections(getContext(this));
+        if (cols[this.currentBookId] && cols[this.currentBookId].wordIds.length > 0) {
+          let globalWords = cols[this.currentBookId].wordIds;
+          let lastCompletedId = this.wordQueue[this.wordQueue.length - 1].content.word.wordId;
+          let idx = globalWords.indexOf(lastCompletedId);
+          // 就算在中途被取消收藏了 (idx == -1)，它也会兜底走到 0
+          let nextIdx = (idx + 1) % globalWords.length;
+          await CollectionManager.setLastWordId(getContext(this), this.currentBookId, globalWords[nextIdx]);
+        }
         promptAction.showToast({ message: `特训完成！共复习 ${totalLearned} 个收藏词汇`, duration: 2000 });
       }
       setTimeout(() => { router.back() }, 1500);
@@ -272,7 +316,7 @@ struct LearningSessionPage {
     Column() {
       Row() {
         Image($r('app.media.ic_back')).width(24).height(24).onClick(() => {
-          if (!this.isCollectionMode) this.saveSessionToCache();
+          this.saveSessionToCache();
           router.back();
         })
         Blank()
@@ -293,16 +337,21 @@ struct LearningSessionPage {
       } else if (this.wordQueue.length > 0) {
         Column() {
           Row() {
-            Text(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '新词' : '复习')
-              .fontSize(12).fontColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#F44336' : '#2196F3')
-              .backgroundColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#FFEBEE' : '#E3F2FD')
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+            if (!this.isCollectionMode) {
+              Text(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '新词' : '复习')
+                .fontSize(12).fontColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#F44336' : '#2196F3')
+                .backgroundColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#FFEBEE' : '#E3F2FD')
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+            } else {
+              Text('收藏复习')
+                .fontSize(12).fontColor('#FF9800').backgroundColor('#FFF3E0')
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+            }
 
             Blank()
 
             Text(this.isCurrentWordCollected ? '★' : '☆')
-              .fontSize(28)
-              .fontColor(this.isCurrentWordCollected ? '#4CAF50' : '#CCCCCC')
+              .fontSize(28).fontColor(this.isCurrentWordCollected ? '#4CAF50' : '#CCCCCC')
               .onClick(() => { this.toggleStar() })
 
           }.width('100%').alignItems(VerticalAlign.Center)

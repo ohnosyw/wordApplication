@@ -1,16 +1,19 @@
 // entry/src/main/ets/utils/CollectionManager.ets
 import preferences from '@ohos.data.preferences';
-import { UserInfo, UserManager } from '../utils/UserManager'
+import { UserInfo } from '../utils/UserManager';
 
 export interface CollectionData {
   bookName: string;
   wordIds: string[];
+  // 🌟 新增：每日特训的任务量
+  dailyLimit?: number;
+  // 🌟 新增：记录上一次学到的单词锚点（断点续传）
+  lastWordId?: string;
 }
 
 export class CollectionManager {
   private static PREF_NAME = 'UserCollections';
 
-  // 获取用户的所有收藏夹
   static async getCollections(context: Context): Promise<Record<string, CollectionData>> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return {};
@@ -19,28 +22,23 @@ export class CollectionManager {
     return JSON.parse(data);
   }
 
-  // 切换收藏状态（收藏/取消收藏）
   static async toggleCollection(context: Context, bookId: string, bookName: string, wordId: string): Promise<boolean> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return false;
 
-    // 🌟 修复点 1：将 this.getCollections 改为 CollectionManager.getCollections
     let cols = await CollectionManager.getCollections(context);
 
-    // 如果是第一次收藏这本书，自动创建该词书的收藏夹
     if (!cols[bookId]) {
-      cols[bookId] = { bookName: bookName, wordIds: [] };
+      cols[bookId] = { bookName: bookName, wordIds: [], dailyLimit: 20 };
     }
 
     let idx = cols[bookId].wordIds.indexOf(wordId);
     let isCollected = false;
 
     if (idx > -1) {
-      // 如果已经收藏，则移除（就算词清空了，对应的 bookId 键依然存在，保留空文件夹）
       cols[bookId].wordIds.splice(idx, 1);
       isCollected = false;
     } else {
-      // 如果未收藏，则添加
       cols[bookId].wordIds.push(wordId);
       isCollected = true;
     }
@@ -51,13 +49,62 @@ export class CollectionManager {
     return isCollected;
   }
 
-  // 检查某个词是否被收藏
   static async isCollected(context: Context, bookId: string, wordId: string): Promise<boolean> {
-    // 🌟 修复点 2：将 this.getCollections 改为 CollectionManager.getCollections
     let cols = await CollectionManager.getCollections(context);
     if (cols[bookId] && cols[bookId].wordIds.includes(wordId)) {
       return true;
     }
     return false;
+  }
+
+  // ---------------- 🌟 高级定制功能 ----------------
+
+  // 一键清空某本词书的收藏词
+  static async clearCollection(context: Context, bookId: string): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let cols = await CollectionManager.getCollections(context);
+    if (cols[bookId]) {
+      cols[bookId].wordIds = []; // 清空单词，但保留空文件夹和设置
+      let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+      await pref.put(`col_${currentUser.userId}`, JSON.stringify(cols));
+      await pref.flush();
+    }
+  }
+
+  // 获取与设置每日任务量
+  static async getDailyLimit(context: Context, bookId: string): Promise<number> {
+    let cols = await CollectionManager.getCollections(context);
+    return cols[bookId]?.dailyLimit || 20; // 默认 20 个
+  }
+
+  static async setDailyLimit(context: Context, bookId: string, limit: number): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let cols = await CollectionManager.getCollections(context);
+    if (cols[bookId]) {
+      cols[bookId].dailyLimit = limit;
+      let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+      await pref.put(`col_${currentUser.userId}`, JSON.stringify(cols));
+      await pref.flush();
+    }
+  }
+
+  // 获取与设置学习断点锚点
+  static async getLastWordId(context: Context, bookId: string): Promise<string | undefined> {
+    let cols = await CollectionManager.getCollections(context);
+    return cols[bookId]?.lastWordId;
+  }
+
+  static async setLastWordId(context: Context, bookId: string, wordId: string): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let cols = await CollectionManager.getCollections(context);
+    if (cols[bookId]) {
+      cols[bookId].lastWordId = wordId;
+      let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+      await pref.put(`col_${currentUser.userId}`, JSON.stringify(cols));
+      await pref.flush();
+    }
   }
 }
