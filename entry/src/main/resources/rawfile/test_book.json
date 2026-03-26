@@ -1,0 +1,5 @@
+[
+  {"headWord": "apple", "content": {"word": {"wordId": "t1", "content": {"trans": [{"tranCn": "苹果"}]}}}},
+  {"headWord": "banana", "content": {"word": {"wordId": "t2", "content": {"trans": [{"tranCn": "香蕉"}]}}}},
+  {"headWord": "cat", "content": {"word": {"wordId": "t3", "content": {"trans": [{"tranCn": "猫"}]}}}}
+]

@@ -85,6 +85,14 @@ struct BookSelectPage {
       totalWords: 3254,
       level: '专家',
       color: '#00BCD4' // 青色，代表商业逻辑与清晰严谨
+    },
+    {
+      id: 'test_book',
+      name: 'test_book',
+      description: 'test',
+      totalWords: 3,
+      level: '基础',
+      color: '#2196F3' // 蓝色，代表沉稳与理智
     }
   ]
 
