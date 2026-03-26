@@ -7,10 +7,15 @@ import { UserInfo, UserManager } from '../utils/UserManager';
 export struct MineHome {
   @StorageLink('currentUser') user: UserInfo | null = null;
 
+  aboutToAppear() {
+    // 🌟 每次进入我的页面，严格检查是否断签
+    UserManager.checkAndResetStreak(getContext(this));
+  }
+
   build() {
     Scroll() {
       Column() {
-        // ---------------- 用户头像信息区域 ----------------
+        // ---------------- 1. 用户头像信息区域 ----------------
         Row() {
           Image($r('app.media.user_avatar')).width(60).height(60).borderRadius(30).backgroundColor('#DDD')
 
@@ -25,7 +30,8 @@ export struct MineHome {
                 router.pushUrl({ url: 'pages/EditProfilePage' });
               })
 
-              Text(`已坚持打卡 ${this.user.checkInDays} 天`).fontSize(14).fontColor('#999').margin({ top: 4 })
+              // 🌟 修改为连续打卡天数展示
+              Text(`已连续打卡 ${this.user.continuousCheckInDays || 0} 天`).fontSize(14).fontColor('#999').margin({ top: 4 })
             } else {
               Text("点击登录/注册").fontSize(20).fontWeight(FontWeight.Bold)
               Text("登录后可同步学习数据").fontSize(14).fontColor('#999').margin({ top: 4 })
@@ -41,33 +47,54 @@ export struct MineHome {
           }
         })
 
-        Grid() {
-          GridItem() { this.StatItem("累计单词", this.user ? this.user.totalWords.toString() : "0") }
-          GridItem() { this.StatItem("今日时长", this.user ? "45min" : "0min") }
-          GridItem() { this.StatItem("掌握程度", this.user ? "85%" : "0%") }
-        }
-        .columnsTemplate('1fr 1fr 1fr')
-        .height(100).margin(10)
-
-        // 学习量可视化图表（模拟）
-        Column() {
-          Text("学习遗忘曲线分析").fontWeight(FontWeight.Medium).margin({ bottom: 10 })
-          Rect().width('100%').height(150).fill('#E8F2FF').radius(10)
-          Text("建议：今日复习力度可加大").fontSize(12).fontColor('#4CAF50').margin(5)
-        }
-        .width('90%').padding(15).backgroundColor(Color.White).borderRadius(15)
-
-        List() {
-          ListItem() { this.MenuItem("错题本", "12词") }
-          ListItem() { this.MenuItem("我的收藏", "5词") }
-          ListItem() { this.MenuItem("全局设置", "") }
-        }
-        .backgroundColor(Color.White).margin(20).borderRadius(10)
-
-        // ---------------- 账号操作区 ----------------
         if (this.user) {
+          // ---------------- 2. 连续打卡专属展示卡片 ----------------
           Column() {
-            // 1. 退出登录 (只清凭证，不删数据)
+            Row() {
+              Text('🔥 连续打卡').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
+            }.width('100%').margin({ bottom: 10 })
+
+            Row() {
+              Text((this.user.continuousCheckInDays || 0).toString())
+                .fontSize(40).fontWeight(FontWeight.Bolder).fontColor('#FF5722')
+              Text(' 天').fontSize(16).fontColor('#666').margin({ bottom: 6, left: 4 })
+            }.alignItems(VerticalAlign.Bottom).width('100%')
+
+            Text(this.user.continuousCheckInDays && this.user.continuousCheckInDays > 0 ? '保持热爱，奔赴山海！今天也要坚持哦！' : '打卡中断了，今天重新起航吧！')
+              .fontSize(12).fontColor('#999').margin({ top: 8 }).width('100%')
+          }
+          .width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 10, bottom: 20 })
+
+          // ---------------- 3. 荣誉书架区 (已完成词书) ----------------
+          Column() {
+            Text("荣誉书架 (已完成词书)").fontSize(16).fontWeight(FontWeight.Bold).margin({ bottom: 15 }).width('100%').textAlign(TextAlign.Start)
+
+            if (this.user.completedBooks && this.user.completedBooks.length > 0) {
+              Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
+                ForEach(this.user.completedBooks, (bookName: string) => {
+                  Text(`📖 ${bookName}`)
+                    .fontSize(14).fontColor('#4CAF50').backgroundColor('#E8F5E9')
+                    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                    .borderRadius(8).margin({ right: 10, bottom: 10 })
+                })
+              }.width('100%')
+            } else {
+              Text("还没完成过一本完整的词书哦，继续加油吧！")
+                .fontSize(14).fontColor('#999').width('100%').textAlign(TextAlign.Center).padding(20)
+            }
+          }
+          .width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ bottom: 20 })
+
+          // ---------------- 4. 菜单列表 (已断舍离) ----------------
+          List() {
+            ListItem() { this.MenuItem("我的收藏", "去复习") }
+            // 错题本和全局设置已删除
+          }
+          .backgroundColor(Color.White).width('90%').margin({ bottom: 20 }).borderRadius(10)
+
+          // ---------------- 5. 账号操作区 ----------------
+          Column() {
+            // 退出登录
             Button('退出登录')
               .width('90%').height(50).backgroundColor('#FFF3E0').fontColor('#FF9800')
               .margin({ bottom: 15 })
@@ -75,7 +102,7 @@ export struct MineHome {
                 await UserManager.logout(getContext(this));
               })
 
-            // 2. 永久注销 (危险操作，需二次确认)
+            // 永久注销
             Text('注销账号')
               .fontSize(14).fontColor('#F44336').decoration({ type: TextDecorationType.Underline })
               .margin({ bottom: 40 })
@@ -88,7 +115,7 @@ export struct MineHome {
                     { text: '确认永久注销', color: '#F44336' }
                   ]
                 }).then(async (data) => {
-                  if (data.index === 1) { // 用户点击了第二个按钮(确认)
+                  if (data.index === 1) {
                     let success = await UserManager.deleteAccount(getContext(this));
                     if (success) {
                       promptAction.showToast({ message: '账号已永久注销' });
@@ -96,23 +123,17 @@ export struct MineHome {
                   }
                 })
               })
-          }.width('100%').margin({ top: 20 })
+          }.width('100%').margin({ top: 10 })
         }
       }
     }
-    .backgroundColor('#F5F5F5')
+    .backgroundColor('#F5F5F5').height('100%')
   }
 
-  @Builder StatItem(label: string, value: string) {
-    Column() {
-      Text(value).fontSize(18).fontWeight(FontWeight.Bold)
-      Text(label).fontSize(12).fontColor('#666').margin({ top: 4 })
-    }
-  }
-
+  // 组件复用
   @Builder MenuItem(title: string, extra: string) {
     Row() {
-      Text(title).fontSize(16)
+      Text(title).fontSize(16).fontColor('#333')
       Blank()
       Text(extra).fontColor('#999').margin({ right: 10 }).fontSize(14)
       Text('>').fontColor('#CCC').fontSize(16)

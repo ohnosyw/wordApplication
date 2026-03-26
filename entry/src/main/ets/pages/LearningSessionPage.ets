@@ -212,6 +212,10 @@ struct LearningSessionPage {
       this.saveSessionToCache();
     } else {
       await UserManager.clearActiveSession(getContext(this));
+
+      // 🌟 新增：只要走到这一步（无论是当天首个任务还是加练任务），都算今天打卡成功！
+      await UserManager.recordCheckIn(getContext(this));
+
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
       promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
       setTimeout(() => { router.back() }, 1500);

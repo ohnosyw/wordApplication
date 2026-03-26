@@ -24,6 +24,11 @@ export struct WordHome {
     let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan);
     this.totalLearnedInBook = taskInfo.totalLearned;
 
+    // 🌟 新增：动态监测完本状态！只要发现进度拉满，立刻写入荣誉书架
+    if (this.totalLearnedInBook >= this.plan.totalWords && this.plan.totalWords > 0) {
+      await UserManager.recordCompletedBook(getContext(this), this.plan.bookName);
+    }
+
     let today = new Date().toDateString();
 
     if (this.user.lastStudyDate !== today || !this.user.todayTarget || this.user.todayTarget === 0 || this.user.todayStudiedCount === 0) {
@@ -40,7 +45,11 @@ export struct WordHome {
         todayStudiedReview: this.user.lastStudyDate === today ? (this.user.todayStudiedReview || 0) : 0,
         todayTargetNew: taskInfo.newCount,
         todayTargetReview: taskInfo.reviewCount,
-        todayTarget: taskInfo.newCount + taskInfo.reviewCount
+        todayTarget: taskInfo.newCount + taskInfo.reviewCount,
+        // 继承极简数据
+        continuousCheckInDays: this.user.continuousCheckInDays || 0,
+        lastCheckInDate: this.user.lastCheckInDate,
+        completedBooks: this.user.completedBooks || []
       };
 
       if (tempUser.todayTarget === 0) {
