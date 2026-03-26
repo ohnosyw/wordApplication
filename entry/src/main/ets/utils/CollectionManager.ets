@@ -6,6 +6,7 @@ export interface CollectionData {
   bookName: string;
   wordIds: string[];
   dailyLimit?: number;
+  lastWordId?: string; // 🌟 恢复：断点续传的核心属性
 }
 
 export class CollectionManager {
@@ -106,5 +107,23 @@ export class CollectionManager {
     let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
     await pref.delete(`col_session_${currentUser.userId}_${bookId}`);
     await pref.flush();
+  }
+
+  // ---------------- 🌟 恢复被遗漏的方法：词汇锚点记录 ----------------
+  static async getLastWordId(context: Context, bookId: string): Promise<string | undefined> {
+    let cols = await CollectionManager.getCollections(context);
+    return cols[bookId]?.lastWordId;
+  }
+
+  static async setLastWordId(context: Context, bookId: string, wordId: string): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let cols = await CollectionManager.getCollections(context);
+    if (cols[bookId]) {
+      cols[bookId].lastWordId = wordId;
+      let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+      await pref.put(`col_${currentUser.userId}`, JSON.stringify(cols));
+      await pref.flush();
+    }
   }
 }

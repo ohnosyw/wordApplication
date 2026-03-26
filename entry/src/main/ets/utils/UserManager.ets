@@ -7,7 +7,7 @@ export interface UserInfo {
   userId: string;
   username: string;
   password: string;
-  checkInDays: number; // 历史遗留的总天数，可以保留作为备用
+  checkInDays: number;
   totalWords: number;
   lastStudyDate?: string;
   todayStudiedCount?: number;
@@ -17,10 +17,12 @@ export interface UserInfo {
   todayStudiedNew?: number;
   todayStudiedReview?: number;
 
-  // 🌟 新增：极简用户中心的核心字段
-  continuousCheckInDays?: number; // 连续打卡天数
-  lastCheckInDate?: string;       // 严格打卡日期
-  completedBooks?: string[];      // 已完成的词书荣誉墙
+  continuousCheckInDays?: number;
+  lastCheckInDate?: string;
+  completedBooks?: string[];
+
+  // 🌟 新增：记录当前正在打卡的词书ID，用于判断是否换书
+  currentStudyBookId?: string;
 }
 
 export class UserManager {
@@ -40,7 +42,7 @@ export class UserManager {
   static async register(context: Context, user: UserInfo): Promise<boolean> {
     let users = await UserManager.getAllUsers(context);
     if (users[user.userId]) { promptAction.showToast({ message: '该账号已存在！' }); return false; }
-    user.completedBooks = []; // 初始化空书架
+    user.completedBooks = [];
     users[user.userId] = user;
     let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
     await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
@@ -237,9 +239,6 @@ export class UserManager {
     await pref.flush();
   }
 
-  // ------------------ 🌟 极简中心核心：打卡与完本逻辑 ------------------
-
-  // 1. 记录打卡（仅在完成当次队列时触发）
   static async recordCheckIn(context: Context): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
@@ -250,13 +249,10 @@ export class UserManager {
       let yesterdayDate = new Date(Date.now() - 86400000).toDateString();
 
       if (u.lastCheckInDate === today) {
-        // 今天已经打过卡了（加练完成不重复加天数），保持不变
       } else if (u.lastCheckInDate === yesterdayDate) {
-        // 昨天打过卡，连续打卡 +1
         u.continuousCheckInDays = (u.continuousCheckInDays || 0) + 1;
         u.lastCheckInDate = today;
       } else {
-        // 中断了，重新从 1 开始
         u.continuousCheckInDays = 1;
         u.lastCheckInDate = today;
       }
@@ -268,7 +264,6 @@ export class UserManager {
     }
   }
 
-  // 2. 检查是否漏打卡中断（在用户中心加载时触发）
   static async checkAndResetStreak(context: Context): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
@@ -278,7 +273,6 @@ export class UserManager {
       let today = new Date().toDateString();
       let yesterdayDate = new Date(Date.now() - 86400000).toDateString();
 
-      // 如果上次打卡不是今天，也不是昨天，说明断签了
       if (u.lastCheckInDate !== today && u.lastCheckInDate !== yesterdayDate) {
         if ((u.continuousCheckInDays || 0) > 0) {
           u.continuousCheckInDays = 0;
@@ -291,7 +285,6 @@ export class UserManager {
     }
   }
 
-  // 3. 记录已完成的词书
   static async recordCompletedBook(context: Context, bookName: string): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
@@ -299,7 +292,6 @@ export class UserManager {
     let u = users[currentUser.userId];
     if (u) {
       if (!u.completedBooks) u.completedBooks = [];
-      // 如果还没记录这本书，则加入荣誉墙
       if (!u.completedBooks.includes(bookName)) {
         u.completedBooks.push(bookName);
         let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);

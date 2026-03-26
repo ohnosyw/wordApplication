@@ -58,9 +58,16 @@ struct LearningSessionPage {
     return false;
   }
 
-  // 🌟 重构：双轨并行的快照保存
   async saveSessionToCache() {
     if (this.wordQueue.length === 0) return;
+
+    if (this.isCollectionMode) {
+      if (this.currentIndex < this.wordQueue.length) {
+        let currentWordId = this.wordQueue[this.currentIndex].content.word.wordId;
+        await CollectionManager.setLastWordId(getContext(this), this.currentBookId, currentWordId);
+      }
+      return;
+    }
 
     let sessionData: CacheData = {
       date: new Date().toDateString(),
@@ -75,12 +82,7 @@ struct LearningSessionPage {
       isShowDetails: this.isShowDetails,
       lastAnswerIsKnown: this.lastAnswerIsKnown
     };
-
-    if (this.isCollectionMode) {
-      await CollectionManager.saveCollectionSession(getContext(this), this.currentBookId, JSON.stringify(sessionData));
-    } else {
-      await UserManager.saveActiveSession(getContext(this), JSON.stringify(sessionData));
-    }
+    await UserManager.saveActiveSession(getContext(this), JSON.stringify(sessionData));
   }
 
   async loadWords() {
@@ -88,60 +90,43 @@ struct LearningSessionPage {
     let params = router.getParams() as Record<string, string | string[]>;
 
     if (params && params['mode'] === 'collection') {
-      // ----------- 模式 A：收藏夹特训模式 -----------
       this.isCollectionMode = true;
       this.currentBookId = params['bookId'] as string;
       this.currentBookName = params['bookName'] as string;
 
-      let today = new Date().toDateString();
-
-      // 🌟 1. 尝试恢复收藏模式专属的断点续传！
-      let sessionStr = await CollectionManager.getCollectionSession(getContext(this), this.currentBookId);
-      if (sessionStr) {
-        let cachedSession = JSON.parse(sessionStr) as CacheData;
-        if (cachedSession.date === today && cachedSession.wordQueue && cachedSession.wordQueue.length > 0) {
-          this.wordQueue = cachedSession.wordQueue;
-          this.currentIndex = cachedSession.currentIndex;
-          this.sessionTotalNew = cachedSession.sessionTotalNew;
-          this.sessionTotalReview = cachedSession.sessionTotalReview;
-          this.sessionFinishedNew = cachedSession.sessionFinishedNew;
-          this.sessionFinishedReview = cachedSession.sessionFinishedReview;
-          this.initialNewWordIds = cachedSession.initialNewWordIds;
-          this.completedWordIds = cachedSession.completedWordIds;
-          this.isShowDetails = cachedSession.isShowDetails || false;
-          this.lastAnswerIsKnown = cachedSession.lastAnswerIsKnown || false;
-
-          await this.prepareCurrentWord();
-          promptAction.showToast({ message: '已为您恢复收藏特训进度' });
-          this.isLoading = false;
-          return;
-        }
-      }
-
-      // 🌟 2. 如果没有断点，则严格按照【艾宾浩斯复习时间】生成今日特训队列
       let cols = await CollectionManager.getCollections(getContext(this));
-      let targetWordIds: string[] = cols[this.currentBookId] ? cols[this.currentBookId].wordIds : [];
-      let dailyLimit = cols[this.currentBookId] ? (cols[this.currentBookId].dailyLimit || 20) : 20;
+      let targetWordIds: string[] = [];
+      let dailyLimit = 20;
+      let lastWordId: string | undefined = undefined;
+
+      if (cols[this.currentBookId]) {
+        targetWordIds = cols[this.currentBookId].wordIds;
+        dailyLimit = cols[this.currentBookId].dailyLimit || 20;
+        lastWordId = cols[this.currentBookId].lastWordId;
+      }
 
       let allWords = await DataLoader.loadWordBook(getContext(this), `${this.currentBookId}.json`);
       let collectionWords = allWords.filter(w => targetWordIds.includes(w.content.word.wordId));
 
-      let progressMap = await ProgressManager.getProgressMap(getContext(this));
+      if (collectionWords.length > 0) {
+        let startIndex = 0;
+        if (lastWordId) {
+          let idx = collectionWords.findIndex(w => w.content.word.wordId === lastWordId);
+          if (idx !== -1) startIndex = idx;
+        }
 
-      // 核心算法：根据艾宾浩斯曲线的 nextReviewDate 对收藏词进行排序（时间越早越紧急，排在前面）
-      collectionWords.sort((a, b) => {
-        let dateA = progressMap[a.content.word.wordId] ? progressMap[a.content.word.wordId].nextReviewDate : 0;
-        let dateB = progressMap[b.content.word.wordId] ? progressMap[b.content.word.wordId].nextReviewDate : 0;
-        return dateA - dateB;
-      });
+        let finalQueue: WordEntry[] = [];
+        let count = Math.min(dailyLimit, collectionWords.length);
+        for (let i = 0; i < count; i++) {
+          let idx = (startIndex + i) % collectionWords.length;
+          finalQueue.push(collectionWords[idx]);
+        }
 
-      // 核心算法：截取精确的任务量
-      let count = Math.min(dailyLimit, collectionWords.length);
-      this.wordQueue = collectionWords.slice(0, count);
-      this.sessionTotalReview = this.wordQueue.length;
+        this.wordQueue = finalQueue;
+        this.sessionTotalReview = this.wordQueue.length;
+      }
 
     } else {
-      // ----------- 模式 B：正常的今日打卡模式 -----------
       let plan = AppStorage.get<PlanData>('studyPlan');
       if (!plan) { promptAction.showToast({ message: '计划异常' }); router.back(); return; }
 
@@ -187,7 +172,7 @@ struct LearningSessionPage {
         }
       }
       await this.prepareCurrentWord();
-      this.saveSessionToCache(); // 开局自动备一个份
+      this.saveSessionToCache();
     } else {
       promptAction.showToast({ message: '太棒了！没有任务啦。' });
       setTimeout(() => { router.back() }, 1500);
@@ -232,9 +217,6 @@ struct LearningSessionPage {
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
     this.currentProgress = newProgress;
 
-    let map = await ProgressManager.getProgressMap(getContext(this));
-    AppStorage.setOrCreate('totalLearnedInBook', Object.keys(map).length);
-
     let wId = this.currentProgress.wordId;
 
     if (isKnown && !this.completedWordIds.includes(wId)) {
@@ -245,6 +227,11 @@ struct LearningSessionPage {
         if (this.initialNewWordIds.includes(wId)) {
           this.sessionFinishedNew++;
           await UserManager.updateUserStats(getContext(this), 1, 0);
+
+          // 🌟 修复 Bug 1：只有真正掌握了新的词，书本总进度才加 1
+          let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
+          AppStorage.setOrCreate('totalLearnedInBook', currentTotal + 1);
+
         } else {
           this.sessionFinishedReview++;
           await UserManager.updateUserStats(getContext(this), 0, 1);
@@ -277,6 +264,11 @@ struct LearningSessionPage {
         if (this.initialNewWordIds.includes(wId)) {
           this.sessionFinishedNew--;
           await UserManager.updateUserStats(getContext(this), -1, 0);
+
+          // 🌟 修复 Bug 1（反向撤销）：新词记错了撤回，书本总进度也减 1
+          let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
+          AppStorage.setOrCreate('totalLearnedInBook', Math.max(0, currentTotal - 1));
+
         } else {
           this.sessionFinishedReview--;
           await UserManager.updateUserStats(getContext(this), 0, -1);
@@ -299,13 +291,19 @@ struct LearningSessionPage {
     } else {
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
 
-      // 🌟 核心：退出前精准清理各自频道的缓存快照
       if (!this.isCollectionMode) {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.recordCheckIn(getContext(this));
         promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
       } else {
-        await CollectionManager.clearCollectionSession(getContext(this), this.currentBookId);
+        let cols = await CollectionManager.getCollections(getContext(this));
+        if (cols[this.currentBookId] && cols[this.currentBookId].wordIds.length > 0) {
+          let globalWords = cols[this.currentBookId].wordIds;
+          let lastCompletedId = this.wordQueue[this.wordQueue.length - 1].content.word.wordId;
+          let idx = globalWords.indexOf(lastCompletedId);
+          let nextIdx = (idx + 1) % globalWords.length;
+          await CollectionManager.setLastWordId(getContext(this), this.currentBookId, globalWords[nextIdx]);
+        }
         promptAction.showToast({ message: `特训完成！共复习 ${totalLearned} 个收藏词汇`, duration: 2000 });
       }
       setTimeout(() => { router.back() }, 1500);

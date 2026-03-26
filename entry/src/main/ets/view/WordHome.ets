@@ -11,7 +11,6 @@ export struct WordHome {
   @StorageLink('currentUser') user: UserInfo | null = null;
   @StorageLink('studyPlan') @Watch('refreshDailyState') plan: PlanData | null = null;
 
-  // 🌟 核心：将其变为 @StorageLink，这样背单词页面的变化会瞬间同步到这里的进度条！
   @StorageLink('totalLearnedInBook') totalLearnedInBook: number = 0;
 
   aboutToAppear() {
@@ -24,14 +23,16 @@ export struct WordHome {
     let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan);
     this.totalLearnedInBook = taskInfo.totalLearned;
 
-    // 🌟 新增：动态监测完本状态！只要发现进度拉满，立刻写入荣誉书架
     if (this.totalLearnedInBook >= this.plan.totalWords && this.plan.totalWords > 0) {
       await UserManager.recordCompletedBook(getContext(this), this.plan.bookName);
     }
 
     let today = new Date().toDateString();
 
-    if (this.user.lastStudyDate !== today || !this.user.todayTarget || this.user.todayTarget === 0 || this.user.todayStudiedCount === 0) {
+    // 🌟 核心判断：不仅判断跨天，还判断“是否切换了词书”
+    let isBookSwitched = this.user.currentStudyBookId !== this.plan.bookId;
+
+    if (this.user.lastStudyDate !== today || !this.user.todayTarget || this.user.todayTarget === 0 || this.user.todayStudiedCount === undefined || isBookSwitched) {
 
       let tempUser: UserInfo = {
         userId: this.user.userId,
@@ -39,17 +40,21 @@ export struct WordHome {
         password: this.user.password,
         checkInDays: this.user.checkInDays,
         totalWords: this.user.totalWords,
+        continuousCheckInDays: this.user.continuousCheckInDays,
+        lastCheckInDate: this.user.lastCheckInDate,
+        completedBooks: this.user.completedBooks,
+
         lastStudyDate: today,
-        todayStudiedCount: this.user.lastStudyDate === today ? (this.user.todayStudiedCount || 0) : 0,
-        todayStudiedNew: this.user.lastStudyDate === today ? (this.user.todayStudiedNew || 0) : 0,
-        todayStudiedReview: this.user.lastStudyDate === today ? (this.user.todayStudiedReview || 0) : 0,
+        currentStudyBookId: this.plan.bookId, // 🌟 重新绑定为新词书
+
+        // 🌟 核心修复：如果是同一天内换书，进度强制归 0（针对这本新书重新开始打卡）
+        todayStudiedCount: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedCount || 0) : 0,
+        todayStudiedNew: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedNew || 0) : 0,
+        todayStudiedReview: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedReview || 0) : 0,
+
         todayTargetNew: taskInfo.newCount,
         todayTargetReview: taskInfo.reviewCount,
-        todayTarget: taskInfo.newCount + taskInfo.reviewCount,
-        // 继承极简数据
-        continuousCheckInDays: this.user.continuousCheckInDays || 0,
-        lastCheckInDate: this.user.lastCheckInDate,
-        completedBooks: this.user.completedBooks || []
+        todayTarget: taskInfo.newCount + taskInfo.reviewCount
       };
 
       if (tempUser.todayTarget === 0) {
@@ -86,7 +91,6 @@ export struct WordHome {
       } else {
         Scroll() {
           Column() {
-            // 词书卡片
             Column() {
               Row() { Text(this.plan.bookName).fontSize(22).fontWeight(FontWeight.Bold); Blank(); Text('更换词书 >').fontSize(14).fontColor('#4CAF50').onClick(() => { router.pushUrl({ url: 'pages/BookSelectPage' }) }) }.width('100%')
               Row() {
@@ -98,7 +102,6 @@ export struct WordHome {
               }.width('100%').margin({ top: 20 })
             }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
 
-            // 全书进度条
             Column() {
               Row() {
                 Text('词书总进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
@@ -110,7 +113,6 @@ export struct WordHome {
                 .width('100%').color('#2196F3').backgroundColor('#E3F2FD').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
             }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
 
-            // 学习计划卡片
             Column() {
               Row() { Text('学习计划').fontSize(18).fontWeight(FontWeight.Bold); Blank(); Text('调整计划 >').fontSize(14).fontColor('#4CAF50').onClick(() => { router.pushUrl({ url: 'pages/StudyPlanPage' }) }) }.width('100%')
               Divider().margin({ top: 10, bottom: 10 })
@@ -119,7 +121,6 @@ export struct WordHome {
               Row() { Text('学习模式').fontSize(16); Blank(); Text(this.plan.studyMode === 0 ? '先学新词再复习' : '新词复习混合').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#666') }.width('100%').margin({ bottom: 10 })
             }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
 
-            // 今日任务进度条
             Column() {
               Row() {
                 Text('今日进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
@@ -131,8 +132,6 @@ export struct WordHome {
                 .width('100%').color('#4CAF50').backgroundColor('#E8F5E9').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
             }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
 
-            // 开始按钮
-            // 替换掉原来的 开始按钮 逻辑
             Button(this.user.todayStudiedCount !== undefined && this.user.todayTarget !== undefined && this.user.todayStudiedCount > 0 && this.user.todayStudiedCount < this.user.todayTarget ? '继续学习' : '开始背单词')
               .width('90%').height(50).backgroundColor('#4CAF50').margin({ top: 30, bottom: 30 })
               .onClick(() => {
@@ -149,7 +148,6 @@ export struct WordHome {
                     ]
                   }).then(async (data) => {
                     if (data.index === 1) {
-                      // 🌟 核心修复：重新扫描库存，带入精准可用的词汇量！
                       let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
                       await UserManager.addExtraTarget(getContext(this), this.plan!, taskInfo.availableNew, taskInfo.availableReview);
                       router.pushUrl({ url: 'pages/LearningSessionPage' })
