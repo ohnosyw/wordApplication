@@ -9,6 +9,7 @@
     "pages/RegisterPage",
     "pages/EditProfilePage",
     "pages/CollectionsPage",
-    "pages/CollectionWordsPage"
+    "pages/CollectionWordsPage",
+    "pages/CompletedBooksPage"
   ]
 }

@@ -90,7 +90,15 @@ struct BookSelectPage {
       id: 'test_book',
       name: 'test_book',
       description: 'test',
-      totalWords: 3,
+      totalWords: 5,
+      level: '基础',
+      color: '#2196F3' // 蓝色，代表沉稳与理智
+    },
+    {
+      id: 'test_book222',
+      name: 'test_book2',
+      description: 'test2',
+      totalWords: 7,
       level: '基础',
       color: '#2196F3' // 蓝色，代表沉稳与理智
     }

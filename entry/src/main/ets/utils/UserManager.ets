@@ -3,6 +3,12 @@ import preferences from '@ohos.data.preferences';
 import promptAction from '@ohos.promptAction';
 import { PlanData } from '../model/StudyPlan';
 
+export interface CompletedBookInfo {
+  bookId: string;
+  bookName: string;
+  totalWords: number;
+}
+
 export interface UserInfo {
   userId: string;
   username: string;
@@ -19,7 +25,8 @@ export interface UserInfo {
 
   continuousCheckInDays?: number;
   lastCheckInDate?: string;
-  completedBooks?: string[];
+  // 🌟 升级：存储完整的书籍信息对象
+  completedBooks?: CompletedBookInfo[];
 
   currentStudyBookId?: string;
 }
@@ -326,15 +333,22 @@ export class UserManager {
     }
   }
 
-  static async recordCompletedBook(context: Context, bookName: string): Promise<void> {
+  static async recordCompletedBook(context: Context, plan: PlanData): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
     let users = await UserManager.getAllUsers(context);
     let u = users[currentUser.userId];
     if (u) {
       if (!u.completedBooks) u.completedBooks = [];
-      if (!u.completedBooks.includes(bookName)) {
-        u.completedBooks.push(bookName);
+
+      // 兼容旧的 string 数据，防止崩溃
+      if (u.completedBooks.length > 0 && typeof u.completedBooks[0] === 'string') {
+        u.completedBooks = [];
+      }
+
+      let exists = u.completedBooks.some((b: CompletedBookInfo) => b.bookId === plan.bookId);
+      if (!exists) {
+        u.completedBooks.push({ bookId: plan.bookId, bookName: plan.bookName, totalWords: plan.totalWords });
         let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
         await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
         await pref.flush();

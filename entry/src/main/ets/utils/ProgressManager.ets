@@ -58,4 +58,30 @@ export class ProgressManager {
     await pref.put(userKey, JSON.stringify(map));
     await pref.flush(); // 强制写入磁盘，确保断电不丢数据
   }
+
+  // 🌟 新增：定点清除某本词书的所有学习记录
+  static async clearBookProgress(context: Context, bookId: string): Promise<void> {
+    // 🌟 修复点 1：把 this 替换为显式的类名 ProgressManager
+    let map = await ProgressManager.getProgressMap(context);
+
+    // 🌟 修复点 2：将 any 替换为精确的 WordProgress 类型
+    let newMap: Record<string, WordProgress> = {};
+
+    // 过滤保留下“非该词书”的其他进度
+    for (let key of Object.keys(map)) {
+      if (!key.startsWith(`${bookId}_`)) {
+        newMap[key] = map[key];
+      }
+    }
+
+    let pref = await preferences.getPreferences(context, 'WordMemoryDB');
+
+    // 🌟 修复点 3：将 any 替换为顶部已经引入的 UserInfo 类型
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+
+    if (currentUser) {
+      await pref.put(`user_${currentUser.userId}_Progress`, JSON.stringify(newMap));
+      await pref.flush();
+    }
+  }
 }

@@ -6,7 +6,7 @@ import { Ebbinghaus, WordProgress } from '../utils/Ebbinghaus'
 import { WordService } from '../utils/WordService'
 import { ProgressManager } from '../utils/ProgressManager'
 import { PlanData } from '../model/StudyPlan'
-import { UserManager } from '../utils/UserManager'
+import { UserManager, UserInfo } from '../utils/UserManager'
 import { CollectionManager } from '../utils/CollectionManager'
 import { DataLoader } from '../utils/DataLoader'
 
@@ -24,7 +24,6 @@ interface CacheData {
   lastAnswerIsKnown: boolean;
 }
 
-// 🌟 修复点 1：为原来的匿名对象提供显式接口定义
 interface DailyQueueData {
   wordQueue: WordEntry[];
   initialNewWordIds: string[];
@@ -95,7 +94,6 @@ struct LearningSessionPage {
 
   async loadWords() {
     this.isLoading = true;
-    // 🌟 修复点 2：统一使用 Record<string, Object>
     let params = router.getParams() as Record<string, Object>;
 
     if (params && params['mode'] === 'collection') {
@@ -194,7 +192,6 @@ struct LearningSessionPage {
             }
           }
 
-          // 🌟 修复点 3：通过显式接口类型告别匿名对象报错
           let dailyData: DailyQueueData = {
             wordQueue: this.wordQueue,
             initialNewWordIds: this.initialNewWordIds,
@@ -224,7 +221,6 @@ struct LearningSessionPage {
     if (map[namespacedId]) {
       this.currentProgress = map[namespacedId];
     } else {
-      // 🌟 强制断言
       this.currentProgress = { wordId: namespacedId, repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: Date.now() } as WordProgress;
     }
     this.isCurrentWordCollected = await CollectionManager.isCollected(getContext(this), this.currentBookId, rawId);
@@ -316,6 +312,7 @@ struct LearningSessionPage {
     this.saveSessionToCache();
   }
 
+  // ------------------ 🌟 核心升级：完本拦截逻辑 ------------------
   async nextWord() {
     if (this.currentIndex < this.wordQueue.length - 1) {
       this.currentIndex += 1;
@@ -329,8 +326,50 @@ struct LearningSessionPage {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.clearDailyQueue(getContext(this), this.currentBookId, new Date().toDateString());
         await UserManager.recordCheckIn(getContext(this));
-        promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
+
+        let plan = AppStorage.get<PlanData>('studyPlan');
+        let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
+
+        // 🌟 完本判定：如果你背完了今天，且总进度满了！
+        if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
+          await UserManager.recordCompletedBook(getContext(this), plan);
+
+          promptAction.showDialog({
+            title: '🎉 恭喜完本！',
+            message: `太棒了！您已成功背完《${plan.bookName}》所有单词！\n接下来您想重置进度开启二刷，还是更换一本新词书？\n（若选择更换词书，重置权限将在"已完成词书"中为您永久保留）`,
+            buttons: [
+              { text: '更换新词书', color: '#2196F3' },
+              { text: '重置并二刷', color: '#F44336' }
+            ]
+          }).then(async (data) => {
+            if (data.index === 0) {
+              // 选择更换：进度不重置，直接去选新书
+              router.replaceUrl({ url: 'pages/BookSelectPage' });
+            } else if (data.index === 1) {
+              // 选择重置：清除底层进度，但已完成列表中的荣誉保留
+              await ProgressManager.clearBookProgress(getContext(this), this.currentBookId);
+              AppStorage.setOrCreate('totalLearnedInBook', 0);
+              let user = AppStorage.get<UserInfo>('currentUser');
+              if (user) {
+                user.todayStudiedCount = 0;
+                user.todayStudiedNew = 0;
+                user.todayStudiedReview = 0;
+                AppStorage.setOrCreate('currentUser', user);
+              }
+              promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
+              router.back();
+            } else {
+              router.back();
+            }
+          })
+        } else {
+          // 常规的完成当天任务
+          promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
+          setTimeout(() => { router.back() }, 1500);
+        }
+
       } else {
+        // 收藏特训结束逻辑
         let cols = await CollectionManager.getCollections(getContext(this));
         if (cols[this.currentBookId] && cols[this.currentBookId].wordIds.length > 0) {
           let globalWords = cols[this.currentBookId].wordIds;
@@ -340,8 +379,8 @@ struct LearningSessionPage {
           await CollectionManager.setLastWordId(getContext(this), this.currentBookId, globalWords[nextIdx]);
         }
         promptAction.showToast({ message: `特训完成！共复习 ${totalLearned} 个收藏词汇`, duration: 2000 });
+        setTimeout(() => { router.back() }, 1500);
       }
-      setTimeout(() => { router.back() }, 1500);
     }
   }
 
@@ -426,11 +465,11 @@ struct LearningSessionPage {
               Button('记错了')
                 .width('40%').height(50).backgroundColor('#FFEBEE').fontColor('#F44336').fontSize(18)
                 .onClick(() => { this.markAsWrong() })
-              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成特训 🎉' : '下一个')
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
                 .width('55%').height(50).backgroundColor('#4CAF50').fontSize(18)
                 .onClick(() => { this.nextWord() })
             } else {
-              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成特训 🎉' : '下一个')
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
                 .width('100%').height(50).backgroundColor('#4CAF50').fontSize(18)
                 .onClick(() => { this.nextWord() })
             }

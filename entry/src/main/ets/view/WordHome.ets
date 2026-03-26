@@ -5,6 +5,7 @@ import preferences from '@ohos.data.preferences'
 import { PlanData } from '../model/StudyPlan'
 import { UserInfo, UserManager } from '../utils/UserManager'
 import { WordService } from '../utils/WordService'
+import { ProgressManager } from '../utils/ProgressManager'
 
 @Component
 export struct WordHome {
@@ -24,7 +25,7 @@ export struct WordHome {
     this.totalLearnedInBook = taskInfo.totalLearned;
 
     if (this.totalLearnedInBook >= this.plan.totalWords && this.plan.totalWords > 0) {
-      await UserManager.recordCompletedBook(getContext(this), this.plan.bookName);
+      await UserManager.recordCompletedBook(getContext(this), this.plan);
     }
 
     let today = new Date().toDateString();
@@ -41,7 +42,6 @@ export struct WordHome {
 
       let queueStr = await UserManager.getDailyQueue(getContext(this), this.plan.bookId, today);
       if (queueStr) {
-        // 🌟 修复点 4：解析并显式转为 Record 字典，彻底消灭 untyped 报错
         let dailyData = JSON.parse(queueStr) as Record<string, Object>;
         targetNew = dailyData['sessionTotalNew'] as number;
         targetReview = dailyData['sessionTotalReview'] as number;
@@ -141,6 +141,50 @@ export struct WordHome {
             Button(this.user.todayStudiedCount !== undefined && this.user.todayTarget !== undefined && this.user.todayStudiedCount > 0 && this.user.todayStudiedCount < this.user.todayTarget ? '继续学习' : '开始背单词')
               .width('90%').height(50).backgroundColor('#4CAF50').margin({ top: 30, bottom: 30 })
               .onClick(() => {
+
+                if (this.totalLearnedInBook >= this.plan!.totalWords && this.plan!.totalWords > 0) {
+                  promptAction.showDialog({
+                    title: '🎉 恭喜完本！',
+                    message: `您已成功背完《${this.plan!.bookName}》所有单词！\n接下来您想重置进度开启二刷，还是更换一本新词书？\n（若选择更换，重置权限将在"已完成词书"中为您保留）`,
+                    buttons: [
+                      { text: '更换新词书', color: '#2196F3' },
+                      { text: '重置并二刷', color: '#F44336' }
+                    ]
+                  }).then(async (data) => {
+                    if (data.index === 0) {
+                      router.pushUrl({ url: 'pages/BookSelectPage' });
+                    } else if (data.index === 1) {
+                      await ProgressManager.clearBookProgress(getContext(this), this.plan!.bookId);
+                      AppStorage.setOrCreate('totalLearnedInBook', 0);
+                      await UserManager.clearActiveSession(getContext(this));
+                      await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
+
+                      if (this.user) {
+                        this.user.todayStudiedCount = 0;
+                        this.user.todayStudiedNew = 0;
+                        this.user.todayStudiedReview = 0;
+
+                        // 🌟 核心修复：唤醒雷达，根据空数据重新计算额度
+                        let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
+                        this.user.todayTargetNew = taskInfo.newCount;
+                        this.user.todayTargetReview = taskInfo.reviewCount;
+                        this.user.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
+
+                        let users = await UserManager.getAllUsers(getContext(this));
+                        users[this.user.userId] = this.user;
+                        let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
+                        await pref.put('AllUsers', JSON.stringify(users));
+                        await pref.flush();
+
+                        AppStorage.setOrCreate('currentUser', this.user);
+                      }
+                      this.refreshDailyState();
+                      promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
+                    }
+                  });
+                  return;
+                }
+
                 let studied = this.user!.todayStudiedCount !== undefined ? this.user!.todayStudiedCount : 0;
                 let target = this.user!.todayTarget !== undefined ? this.user!.todayTarget : 0;
 
