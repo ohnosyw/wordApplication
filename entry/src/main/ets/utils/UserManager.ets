@@ -21,13 +21,14 @@ export interface UserInfo {
   lastCheckInDate?: string;
   completedBooks?: string[];
 
-  // 🌟 新增：记录当前正在打卡的词书ID，用于感知换书动作
   currentStudyBookId?: string;
 }
 
 export class UserManager {
   private static PREF_NAME = 'UserDatabase';
   private static PROGRESS_DB_NAME = 'WordMemoryDB';
+  // 🌟 新增：显式声明收藏库的名字，用于跨库歼灭
+  private static COLLECTION_DB_NAME = 'UserCollections';
   private static KEY_USERS = 'AllUsers';
   private static KEY_CURRENT = 'CurrentUserId';
 
@@ -118,17 +119,33 @@ export class UserManager {
         if (key !== userId) newUsers[key] = users[key];
       }
 
+      // 1. 清理主数据库（账号信息、主线断点、每日队列快照等）
       let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
       await pref.put(UserManager.KEY_USERS, JSON.stringify(newUsers));
       await pref.delete(`plan_${userId}`);
       await pref.delete(`session_${userId}`);
       await pref.delete(UserManager.KEY_CURRENT);
+      // 由于 queue 是按日期生成的动态键，注销时不便全量遍历，但主账号已毁，垃圾数据会被隔离，不再影响新同名用户。
       await pref.flush();
 
+      // 2. 清理进度数据库（艾宾浩斯记忆档案）
       let progressPref = await preferences.getPreferences(context, UserManager.PROGRESS_DB_NAME);
       await progressPref.delete(`user_${userId}_Progress`);
       await progressPref.flush();
 
+      // 3. 🌟 核心修复：全面清理第三大数据库 —— 收藏夹及收藏特训断点！
+      let colPref = await preferences.getPreferences(context, UserManager.COLLECTION_DB_NAME);
+      let colDataStr = await colPref.get(`col_${userId}`, '{}') as string;
+      let colData = JSON.parse(colDataStr) as Record<string, Object>;
+      // 遍历该用户之前所有的收藏夹，把为它们单独创建的“特训断点快照”全部物理粉碎
+      for (let bookId of Object.keys(colData)) {
+        await colPref.delete(`col_session_${userId}_${bookId}`);
+      }
+      // 粉碎收藏夹本体
+      await colPref.delete(`col_${userId}`);
+      await colPref.flush();
+
+      // 4. 重置内存变量
       AppStorage.setOrCreate('currentUser', null);
       AppStorage.setOrCreate('studyPlan', null);
       AppStorage.setOrCreate('totalLearnedInBook', 0);
@@ -239,7 +256,6 @@ export class UserManager {
     await pref.flush();
   }
 
-  // ------------------ 🌟 每日队列保鲜库 (确保换书切回后队列不变) ------------------
   static async saveDailyQueue(context: Context, bookId: string, date: string, queueStr: string): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
