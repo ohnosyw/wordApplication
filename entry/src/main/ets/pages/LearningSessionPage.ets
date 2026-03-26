@@ -8,7 +8,6 @@ import { ProgressManager } from '../utils/ProgressManager'
 import { PlanData } from '../model/StudyPlan'
 import { UserManager } from '../utils/UserManager'
 
-// 更新快照的数据结构
 interface CacheData {
   date: string;
   wordQueue: WordEntry[];
@@ -19,6 +18,9 @@ interface CacheData {
   sessionFinishedReview: number;
   initialNewWordIds: string[];
   completedWordIds: string[];
+  // 🌟 将界面状态也存入快照，防止在背面退出时重置
+  isShowDetails: boolean;
+  lastAnswerIsKnown: boolean;
 }
 
 @Entry
@@ -34,6 +36,10 @@ struct LearningSessionPage {
   @State sessionTotalReview: number = 0;
   @State sessionFinishedNew: number = 0;
   @State sessionFinishedReview: number = 0;
+
+  // 🌟 新增：用于“记错了”功能的状态追踪
+  @State lastAnswerIsKnown: boolean = false;
+  private previousProgressBackup: WordProgress | null = null; // 备份答题前的进度
 
   private initialNewWordIds: string[] = [];
   private completedWordIds: string[] = [];
@@ -58,7 +64,9 @@ struct LearningSessionPage {
       sessionFinishedNew: this.sessionFinishedNew,
       sessionFinishedReview: this.sessionFinishedReview,
       initialNewWordIds: this.initialNewWordIds,
-      completedWordIds: this.completedWordIds
+      completedWordIds: this.completedWordIds,
+      isShowDetails: this.isShowDetails,
+      lastAnswerIsKnown: this.lastAnswerIsKnown
     };
     await UserManager.saveActiveSession(getContext(this), JSON.stringify(sessionData));
   }
@@ -82,6 +90,10 @@ struct LearningSessionPage {
         this.sessionFinishedReview = cachedSession.sessionFinishedReview;
         this.initialNewWordIds = cachedSession.initialNewWordIds;
         this.completedWordIds = cachedSession.completedWordIds;
+
+        // 恢复退出时的正反面状态
+        this.isShowDetails = cachedSession.isShowDetails || false;
+        this.lastAnswerIsKnown = cachedSession.lastAnswerIsKnown || false;
 
         await this.initWordProgress(this.wordQueue[this.currentIndex].content.word.wordId);
         promptAction.showToast({ message: '已为您恢复上次的学习进度' });
@@ -122,10 +134,20 @@ struct LearningSessionPage {
   }
 
   async handleAnswer(isKnown: boolean) {
+    // 🌟 1. 备份当前进度，为“后悔药”做准备
+    this.previousProgressBackup = {
+      wordId: this.currentProgress.wordId,
+      repetition: this.currentProgress.repetition,
+      interval: this.currentProgress.interval,
+      efactor: this.currentProgress.efactor,
+      nextReviewDate: this.currentProgress.nextReviewDate
+    };
+    this.lastAnswerIsKnown = isKnown;
+
     let newProgress = Ebbinghaus.calculateNextReview(this.currentProgress, isKnown);
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
+    this.currentProgress = newProgress; // 更新本地内存
 
-    // 🌟 核心升级：每一次点击都在实时推动全局数据的进度！
     let map = await ProgressManager.getProgressMap(getContext(this));
     AppStorage.setOrCreate('totalLearnedInBook', Object.keys(map).length);
 
@@ -135,11 +157,9 @@ struct LearningSessionPage {
       this.completedWordIds.push(wId);
       if (this.initialNewWordIds.includes(wId)) {
         this.sessionFinishedNew++;
-        // 实时结算 1 个新词给底层
         await UserManager.updateUserStats(getContext(this), 1, 0);
       } else {
         this.sessionFinishedReview++;
-        // 实时结算 1 个复习词给底层
         await UserManager.updateUserStats(getContext(this), 0, 1);
       }
     }
@@ -151,6 +171,39 @@ struct LearningSessionPage {
     this.saveSessionToCache();
   }
 
+  // 🌟 核心新增：记错了（完美回滚机制）
+  async markAsWrong() {
+    if (!this.previousProgressBackup) return;
+
+    // 1. 基于备份的旧进度，重新按“不认识”计算艾宾浩斯惩罚
+    let newProgress = Ebbinghaus.calculateNextReview(this.previousProgressBackup, false);
+    await ProgressManager.saveWordProgress(getContext(this), newProgress);
+    this.currentProgress = newProgress;
+
+    let wId = this.currentProgress.wordId;
+
+    // 2. 撤回完成清单里的记录，并把顶部分子和底层数据库扣除 1
+    let index = this.completedWordIds.indexOf(wId);
+    if (index > -1) {
+      this.completedWordIds.splice(index, 1); // 移出已完成名单
+      if (this.initialNewWordIds.includes(wId)) {
+        this.sessionFinishedNew--;
+        await UserManager.updateUserStats(getContext(this), -1, 0); // 告诉大脑扣分
+      } else {
+        this.sessionFinishedReview--;
+        await UserManager.updateUserStats(getContext(this), 0, -1);
+      }
+    }
+
+    // 3. 把这个词重新塞入队尾
+    this.wordQueue.push(this.wordQueue[this.currentIndex]);
+
+    // 4. 隐藏后悔按钮，并提示用户
+    this.lastAnswerIsKnown = false;
+    promptAction.showToast({ message: '已标记为不认识，稍后将重新复习' });
+    this.saveSessionToCache();
+  }
+
   async nextWord() {
     if (this.currentIndex < this.wordQueue.length - 1) {
       this.currentIndex += 1;
@@ -158,9 +211,7 @@ struct LearningSessionPage {
       await this.initWordProgress(this.wordQueue[this.currentIndex].content.word.wordId);
       this.saveSessionToCache();
     } else {
-      // 🌟 因为我们已经在 handleAnswer 里实时结清了，所以这里只需要删掉快照即可！
       await UserManager.clearActiveSession(getContext(this));
-
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
       promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
       setTimeout(() => { router.back() }, 1500);
@@ -187,14 +238,11 @@ struct LearningSessionPage {
         Column() { LoadingProgress().width(50).height(50).color('#4CAF50'); Text('生成任务中...').fontSize(16).fontColor('#666').margin({ top: 20 }) }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else if (this.wordQueue.length > 0) {
         Column() {
-          // ------------------ 🌟 状态标签 (修复版) ------------------
           Row() {
             Text(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '新词' : '复习')
-              .fontSize(12)
-              .fontColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#F44336' : '#2196F3')
+              .fontSize(12).fontColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#F44336' : '#2196F3')
               .backgroundColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#FFEBEE' : '#E3F2FD')
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .borderRadius(10)
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
           }.width('100%').justifyContent(FlexAlign.End)
 
           Text(this.wordQueue[this.currentIndex].headWord).fontSize(40).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 10 })
@@ -225,13 +273,26 @@ struct LearningSessionPage {
           }
         }.width('90%').layoutWeight(1).backgroundColor(Color.White).borderRadius(20).padding(20).shadow({ radius: 10, color: '#1A000000', offsetX: 0, offsetY: 5 }).margin({ top: 10, bottom: 20 })
 
+        // ------------------ 🌟 底部按钮区：动态展示“记错了” ------------------
         Row() {
           if (!this.isShowDetails) {
             Button('不认识').width('45%').height(50).backgroundColor('#FFF3E0').fontColor('#FF9800').fontSize(18).onClick(() => { this.handleAnswer(false) })
             Button('认识').width('45%').height(50).backgroundColor('#E8F5E9').fontColor('#4CAF50').fontSize(18).onClick(() => { this.handleAnswer(true) })
           } else {
-            Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
-              .width('100%').height(50).backgroundColor('#4CAF50').fontSize(18).onClick(() => { this.nextWord() })
+            // 如果上一步点的是“认识”，则显示后悔药按钮
+            if (this.lastAnswerIsKnown) {
+              Button('记错了')
+                .width('40%').height(50).backgroundColor('#FFEBEE').fontColor('#F44336').fontSize(18)
+                .onClick(() => { this.markAsWrong() })
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
+                .width('55%').height(50).backgroundColor('#4CAF50').fontSize(18)
+                .onClick(() => { this.nextWord() })
+            } else {
+              // 否则只显示唯一的下一个/完成按钮
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
+                .width('100%').height(50).backgroundColor('#4CAF50').fontSize(18)
+                .onClick(() => { this.nextWord() })
+            }
           }
         }.width('90%').justifyContent(FlexAlign.SpaceBetween).margin({ bottom: 30 })
       } else {
