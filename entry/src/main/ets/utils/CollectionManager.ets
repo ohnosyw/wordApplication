@@ -5,10 +5,7 @@ import { UserInfo } from '../utils/UserManager';
 export interface CollectionData {
   bookName: string;
   wordIds: string[];
-  // 🌟 新增：每日特训的任务量
   dailyLimit?: number;
-  // 🌟 新增：记录上一次学到的单词锚点（断点续传）
-  lastWordId?: string;
 }
 
 export class CollectionManager {
@@ -57,25 +54,21 @@ export class CollectionManager {
     return false;
   }
 
-  // ---------------- 🌟 高级定制功能 ----------------
-
-  // 一键清空某本词书的收藏词
   static async clearCollection(context: Context, bookId: string): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
     let cols = await CollectionManager.getCollections(context);
     if (cols[bookId]) {
-      cols[bookId].wordIds = []; // 清空单词，但保留空文件夹和设置
+      cols[bookId].wordIds = [];
       let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
       await pref.put(`col_${currentUser.userId}`, JSON.stringify(cols));
       await pref.flush();
     }
   }
 
-  // 获取与设置每日任务量
   static async getDailyLimit(context: Context, bookId: string): Promise<number> {
     let cols = await CollectionManager.getCollections(context);
-    return cols[bookId]?.dailyLimit || 20; // 默认 20 个
+    return cols[bookId]?.dailyLimit || 20;
   }
 
   static async setDailyLimit(context: Context, bookId: string, limit: number): Promise<void> {
@@ -90,21 +83,28 @@ export class CollectionManager {
     }
   }
 
-  // 获取与设置学习断点锚点
-  static async getLastWordId(context: Context, bookId: string): Promise<string | undefined> {
-    let cols = await CollectionManager.getCollections(context);
-    return cols[bookId]?.lastWordId;
-  }
-
-  static async setLastWordId(context: Context, bookId: string, wordId: string): Promise<void> {
+  // ---------------- 🌟 收藏模式专属：断点续传管理 ----------------
+  static async saveCollectionSession(context: Context, bookId: string, sessionStr: string): Promise<void> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) return;
-    let cols = await CollectionManager.getCollections(context);
-    if (cols[bookId]) {
-      cols[bookId].lastWordId = wordId;
-      let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
-      await pref.put(`col_${currentUser.userId}`, JSON.stringify(cols));
-      await pref.flush();
-    }
+    let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+    await pref.put(`col_session_${currentUser.userId}_${bookId}`, sessionStr);
+    await pref.flush();
+  }
+
+  static async getCollectionSession(context: Context, bookId: string): Promise<string | null> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return null;
+    let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+    let data = await pref.get(`col_session_${currentUser.userId}_${bookId}`, '') as string;
+    return data !== '' ? data : null;
+  }
+
+  static async clearCollectionSession(context: Context, bookId: string): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let pref = await preferences.getPreferences(context, CollectionManager.PREF_NAME);
+    await pref.delete(`col_session_${currentUser.userId}_${bookId}`);
+    await pref.flush();
   }
 }

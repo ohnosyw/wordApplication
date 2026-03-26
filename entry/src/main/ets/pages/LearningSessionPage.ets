@@ -58,20 +58,10 @@ struct LearningSessionPage {
     return false;
   }
 
-  // 🌟 统一保存缓存/断点入口
+  // 🌟 重构：双轨并行的快照保存
   async saveSessionToCache() {
     if (this.wordQueue.length === 0) return;
 
-    if (this.isCollectionMode) {
-      // 🌟 收藏模式专属断点续传：记录当前正在背的这个词的 ID
-      if (this.currentIndex < this.wordQueue.length) {
-        let currentWordId = this.wordQueue[this.currentIndex].content.word.wordId;
-        await CollectionManager.setLastWordId(getContext(this), this.currentBookId, currentWordId);
-      }
-      return;
-    }
-
-    // 普通模式断点续传
     let sessionData: CacheData = {
       date: new Date().toDateString(),
       wordQueue: this.wordQueue,
@@ -85,7 +75,12 @@ struct LearningSessionPage {
       isShowDetails: this.isShowDetails,
       lastAnswerIsKnown: this.lastAnswerIsKnown
     };
-    await UserManager.saveActiveSession(getContext(this), JSON.stringify(sessionData));
+
+    if (this.isCollectionMode) {
+      await CollectionManager.saveCollectionSession(getContext(this), this.currentBookId, JSON.stringify(sessionData));
+    } else {
+      await UserManager.saveActiveSession(getContext(this), JSON.stringify(sessionData));
+    }
   }
 
   async loadWords() {
@@ -98,39 +93,52 @@ struct LearningSessionPage {
       this.currentBookId = params['bookId'] as string;
       this.currentBookName = params['bookName'] as string;
 
-      let cols = await CollectionManager.getCollections(getContext(this));
-      let targetWordIds: string[] = [];
-      let dailyLimit = 20;
-      let lastWordId: string | undefined = undefined;
+      let today = new Date().toDateString();
 
-      if (cols[this.currentBookId]) {
-        targetWordIds = cols[this.currentBookId].wordIds;
-        dailyLimit = cols[this.currentBookId].dailyLimit || 20;
-        lastWordId = cols[this.currentBookId].lastWordId;
+      // 🌟 1. 尝试恢复收藏模式专属的断点续传！
+      let sessionStr = await CollectionManager.getCollectionSession(getContext(this), this.currentBookId);
+      if (sessionStr) {
+        let cachedSession = JSON.parse(sessionStr) as CacheData;
+        if (cachedSession.date === today && cachedSession.wordQueue && cachedSession.wordQueue.length > 0) {
+          this.wordQueue = cachedSession.wordQueue;
+          this.currentIndex = cachedSession.currentIndex;
+          this.sessionTotalNew = cachedSession.sessionTotalNew;
+          this.sessionTotalReview = cachedSession.sessionTotalReview;
+          this.sessionFinishedNew = cachedSession.sessionFinishedNew;
+          this.sessionFinishedReview = cachedSession.sessionFinishedReview;
+          this.initialNewWordIds = cachedSession.initialNewWordIds;
+          this.completedWordIds = cachedSession.completedWordIds;
+          this.isShowDetails = cachedSession.isShowDetails || false;
+          this.lastAnswerIsKnown = cachedSession.lastAnswerIsKnown || false;
+
+          await this.prepareCurrentWord();
+          promptAction.showToast({ message: '已为您恢复收藏特训进度' });
+          this.isLoading = false;
+          return;
+        }
       }
+
+      // 🌟 2. 如果没有断点，则严格按照【艾宾浩斯复习时间】生成今日特训队列
+      let cols = await CollectionManager.getCollections(getContext(this));
+      let targetWordIds: string[] = cols[this.currentBookId] ? cols[this.currentBookId].wordIds : [];
+      let dailyLimit = cols[this.currentBookId] ? (cols[this.currentBookId].dailyLimit || 20) : 20;
 
       let allWords = await DataLoader.loadWordBook(getContext(this), `${this.currentBookId}.json`);
       let collectionWords = allWords.filter(w => targetWordIds.includes(w.content.word.wordId));
 
-      if (collectionWords.length > 0) {
-        // 🌟 核心：寻找上次退出的锚点
-        let startIndex = 0;
-        if (lastWordId) {
-          let idx = collectionWords.findIndex(w => w.content.word.wordId === lastWordId);
-          if (idx !== -1) startIndex = idx;
-        }
+      let progressMap = await ProgressManager.getProgressMap(getContext(this));
 
-        // 🌟 核心：从锚点开始，截取 dailyLimit 长度的队列，超出的部分进行首尾相接绕回
-        let finalQueue: WordEntry[] = [];
-        let count = Math.min(dailyLimit, collectionWords.length);
-        for (let i = 0; i < count; i++) {
-          let idx = (startIndex + i) % collectionWords.length;
-          finalQueue.push(collectionWords[idx]);
-        }
+      // 核心算法：根据艾宾浩斯曲线的 nextReviewDate 对收藏词进行排序（时间越早越紧急，排在前面）
+      collectionWords.sort((a, b) => {
+        let dateA = progressMap[a.content.word.wordId] ? progressMap[a.content.word.wordId].nextReviewDate : 0;
+        let dateB = progressMap[b.content.word.wordId] ? progressMap[b.content.word.wordId].nextReviewDate : 0;
+        return dateA - dateB;
+      });
 
-        this.wordQueue = finalQueue;
-        this.sessionTotalReview = this.wordQueue.length;
-      }
+      // 核心算法：截取精确的任务量
+      let count = Math.min(dailyLimit, collectionWords.length);
+      this.wordQueue = collectionWords.slice(0, count);
+      this.sessionTotalReview = this.wordQueue.length;
 
     } else {
       // ----------- 模式 B：正常的今日打卡模式 -----------
@@ -177,9 +185,9 @@ struct LearningSessionPage {
             this.initialNewWordIds.push(wId);
           }
         }
-        this.saveSessionToCache();
       }
       await this.prepareCurrentWord();
+      this.saveSessionToCache(); // 开局自动备一个份
     } else {
       promptAction.showToast({ message: '太棒了！没有任务啦。' });
       setTimeout(() => { router.back() }, 1500);
@@ -291,21 +299,13 @@ struct LearningSessionPage {
     } else {
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
 
+      // 🌟 核心：退出前精准清理各自频道的缓存快照
       if (!this.isCollectionMode) {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.recordCheckIn(getContext(this));
         promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
       } else {
-        // 🌟 收藏模式完成：找到下一个准备要背的词的 ID 存起来，接力跑！
-        let cols = await CollectionManager.getCollections(getContext(this));
-        if (cols[this.currentBookId] && cols[this.currentBookId].wordIds.length > 0) {
-          let globalWords = cols[this.currentBookId].wordIds;
-          let lastCompletedId = this.wordQueue[this.wordQueue.length - 1].content.word.wordId;
-          let idx = globalWords.indexOf(lastCompletedId);
-          // 就算在中途被取消收藏了 (idx == -1)，它也会兜底走到 0
-          let nextIdx = (idx + 1) % globalWords.length;
-          await CollectionManager.setLastWordId(getContext(this), this.currentBookId, globalWords[nextIdx]);
-        }
+        await CollectionManager.clearCollectionSession(getContext(this), this.currentBookId);
         promptAction.showToast({ message: `特训完成！共复习 ${totalLearned} 个收藏词汇`, duration: 2000 });
       }
       setTimeout(() => { router.back() }, 1500);
@@ -393,11 +393,11 @@ struct LearningSessionPage {
               Button('记错了')
                 .width('40%').height(50).backgroundColor('#FFEBEE').fontColor('#F44336').fontSize(18)
                 .onClick(() => { this.markAsWrong() })
-              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成特训 🎉' : '下一个')
                 .width('55%').height(50).backgroundColor('#4CAF50').fontSize(18)
                 .onClick(() => { this.nextWord() })
             } else {
-              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成特训 🎉' : '下一个')
                 .width('100%').height(50).backgroundColor('#4CAF50').fontSize(18)
                 .onClick(() => { this.nextWord() })
             }

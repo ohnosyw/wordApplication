@@ -14,7 +14,6 @@ struct CollectionWordsPage {
   @State words: WordEntry[] = [];
   @State isLoading: boolean = true;
 
-  // 🌟 高级功能状态
   @State isMasked: boolean = false;
   @State dailyLimit: number = 20;
 
@@ -25,7 +24,6 @@ struct CollectionWordsPage {
       this.bookId = params['bookId'] as string;
       this.bookName = params['bookName'] as string;
 
-      // 每次显示时从数据库拉取最新收藏（防止在背单词时取消了收藏）
       let cols = await CollectionManager.getCollections(getContext(this));
       if (cols[this.bookId]) {
         this.wordIds = cols[this.bookId].wordIds;
@@ -38,10 +36,9 @@ struct CollectionWordsPage {
     this.isLoading = false;
   }
 
-  // 🌟 右上角的专属设置菜单
   @Builder SettingsMenu() {
     Menu() {
-      MenuItem({ content: `设置每日复习量 (当前: ${this.dailyLimit})` })
+      MenuItem({ content: `设置单次任务量 (当前: ${this.dailyLimit})` })
         .onClick(() => {
           TextPickerDialog.show({
             range: ['10', '20', '30', '50', '100', '全部'],
@@ -51,7 +48,7 @@ struct CollectionWordsPage {
               let limit = limitStr === '全部' ? 9999 : parseInt(limitStr);
               this.dailyLimit = limit;
               await CollectionManager.setDailyLimit(getContext(this), this.bookId, limit);
-              promptAction.showToast({ message: `每日复习量已设置为 ${limitStr}` });
+              promptAction.showToast({ message: `单次特训量已设置为 ${limitStr}` });
             }
           })
         })
@@ -88,7 +85,6 @@ struct CollectionWordsPage {
         Image($r('app.media.ic_back')).width(24).height(24).onClick(() => { router.back() })
         Text(this.bookName).fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 15 })
         Blank()
-        // 🌟 设置图标，绑定下拉菜单
         Image($r('app.media.ic_settings')).width(24).height(24).bindMenu(this.SettingsMenu)
       }.width('100%').padding(20).backgroundColor(Color.White)
 
@@ -102,9 +98,19 @@ struct CollectionWordsPage {
             ListItem() {
               Row() {
                 Text(word.headWord).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333').width('40%')
-                // 🌟 遮挡释义逻辑
-                Text(this.isMasked ? '*********' : (word.content.word.content.trans ? word.content.word.content.trans[0].tranCn : ''))
-                  .fontSize(14).fontColor('#666').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+
+                // 🌟 核心：高级的淡灰色方块遮挡效果
+                if (this.isMasked) {
+                  Row()
+                    .layoutWeight(1)
+                    .height(20)
+                    .backgroundColor('#EEEEEE') // 柔和的淡灰色
+                    .borderRadius(4)
+                } else {
+                  Text(word.content.word.content.trans ? word.content.word.content.trans[0].tranCn : '')
+                    .fontSize(14).fontColor('#666').layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+
               }.width('100%').padding(15).backgroundColor(Color.White).borderRadius(10)
             }
           })
