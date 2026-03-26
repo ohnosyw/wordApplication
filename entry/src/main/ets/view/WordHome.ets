@@ -28,11 +28,24 @@ export struct WordHome {
     }
 
     let today = new Date().toDateString();
-
-    // 🌟 核心判断：不仅判断跨天，还判断“是否切换了词书”
     let isBookSwitched = this.user.currentStudyBookId !== this.plan.bookId;
 
     if (this.user.lastStudyDate !== today || !this.user.todayTarget || this.user.todayTarget === 0 || this.user.todayStudiedCount === undefined || isBookSwitched) {
+
+      if (isBookSwitched) {
+        await UserManager.clearActiveSession(getContext(this));
+      }
+
+      let targetNew = taskInfo.newCount;
+      let targetReview = taskInfo.reviewCount;
+
+      let queueStr = await UserManager.getDailyQueue(getContext(this), this.plan.bookId, today);
+      if (queueStr) {
+        // 🌟 修复点 4：解析并显式转为 Record 字典，彻底消灭 untyped 报错
+        let dailyData = JSON.parse(queueStr) as Record<string, Object>;
+        targetNew = dailyData['sessionTotalNew'] as number;
+        targetReview = dailyData['sessionTotalReview'] as number;
+      }
 
       let tempUser: UserInfo = {
         userId: this.user.userId,
@@ -45,23 +58,16 @@ export struct WordHome {
         completedBooks: this.user.completedBooks,
 
         lastStudyDate: today,
-        currentStudyBookId: this.plan.bookId, // 🌟 重新绑定为新词书
+        currentStudyBookId: this.plan.bookId,
 
-        // 🌟 核心修复：如果是同一天内换书，进度强制归 0（针对这本新书重新开始打卡）
         todayStudiedCount: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedCount || 0) : 0,
         todayStudiedNew: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedNew || 0) : 0,
         todayStudiedReview: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedReview || 0) : 0,
 
-        todayTargetNew: taskInfo.newCount,
-        todayTargetReview: taskInfo.reviewCount,
-        todayTarget: taskInfo.newCount + taskInfo.reviewCount
+        todayTargetNew: targetNew,
+        todayTargetReview: targetReview,
+        todayTarget: targetNew + targetReview
       };
-
-      if (tempUser.todayTarget === 0) {
-        tempUser.todayTargetNew = this.plan.dailyNew;
-        tempUser.todayTargetReview = this.plan.dailyReview;
-        tempUser.todayTarget = this.plan.dailyNew + this.plan.dailyReview;
-      }
 
       let users = await UserManager.getAllUsers(getContext(this));
       users[tempUser.userId] = tempUser;

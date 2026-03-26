@@ -21,7 +21,7 @@ export interface UserInfo {
   lastCheckInDate?: string;
   completedBooks?: string[];
 
-  // 🌟 新增：记录当前正在打卡的词书ID，用于判断是否换书
+  // 🌟 新增：记录当前正在打卡的词书ID，用于感知换书动作
   currentStudyBookId?: string;
 }
 
@@ -236,6 +236,31 @@ export class UserManager {
     if (!currentUser) return;
     let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
     await pref.delete(`session_${currentUser.userId}`);
+    await pref.flush();
+  }
+
+  // ------------------ 🌟 每日队列保鲜库 (确保换书切回后队列不变) ------------------
+  static async saveDailyQueue(context: Context, bookId: string, date: string, queueStr: string): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
+    await pref.put(`queue_${currentUser.userId}_${bookId}_${date}`, queueStr);
+    await pref.flush();
+  }
+
+  static async getDailyQueue(context: Context, bookId: string, date: string): Promise<string | null> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return null;
+    let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
+    let data = await pref.get(`queue_${currentUser.userId}_${bookId}_${date}`, '') as string;
+    return data !== '' ? data : null;
+  }
+
+  static async clearDailyQueue(context: Context, bookId: string, date: string): Promise<void> {
+    let currentUser = AppStorage.get<UserInfo>('currentUser');
+    if (!currentUser) return;
+    let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
+    await pref.delete(`queue_${currentUser.userId}_${bookId}_${date}`);
     await pref.flush();
   }
 

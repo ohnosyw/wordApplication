@@ -9,7 +9,6 @@ export interface TaskInfo {
   newCount: number;
   reviewCount: number;
   totalLearned: number;
-  // 🌟 新增：系统里绝对真实的剩余可用量（不受计划上限影响）
   availableNew: number;
   availableReview: number;
 }
@@ -39,8 +38,9 @@ export class WordService {
 
     for (let i = 0; i < allWords.length; i++) {
       let word = allWords[i];
-      let wordId = word.content.word.wordId;
-      if (progressMap[wordId]) {
+      // 🌟 修复点 1：给 ID 加上词书专属命名空间，防止进度“张冠李戴”
+      let namespacedId = `${plan.bookId}_${word.content.word.wordId}`;
+      if (progressMap[namespacedId]) {
         learned.push(word);
       } else {
         unlearned.push(word);
@@ -50,7 +50,11 @@ export class WordService {
     let finalNew = unlearned.slice(0, neededNew);
 
     learned.sort((a, b) => {
-      return progressMap[a.content.word.wordId].nextReviewDate - progressMap[b.content.word.wordId].nextReviewDate;
+      let aProg = progressMap[`${plan.bookId}_${a.content.word.wordId}`];
+      let bProg = progressMap[`${plan.bookId}_${b.content.word.wordId}`];
+      let dateA = aProg ? aProg.nextReviewDate : 0;
+      let dateB = bProg ? bProg.nextReviewDate : 0;
+      return dateA - dateB;
     });
 
     let finalReview = learned.slice(0, neededReview);
@@ -81,8 +85,9 @@ export class WordService {
     let now = Date.now();
 
     for (let i = 0; i < allWords.length; i++) {
-      let wordId = allWords[i].content.word.wordId;
-      let progress = progressMap[wordId];
+      // 🌟 修复点 2：严格按照命名空间检查本书学习量
+      let namespacedId = `${plan.bookId}_${allWords[i].content.word.wordId}`;
+      let progress = progressMap[namespacedId];
       if (progress) {
         totalLearnedCount++;
         if (progress.nextReviewDate <= now) {
@@ -97,7 +102,6 @@ export class WordService {
       newCount: Math.min(newQueueCount, plan.dailyNew),
       reviewCount: Math.min(reviewQueueCount, plan.dailyReview),
       totalLearned: totalLearnedCount,
-      // 🌟 精准返回目前库里还能榨出多少词
       availableNew: newQueueCount,
       availableReview: reviewQueueCount
     };

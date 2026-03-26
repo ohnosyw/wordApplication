@@ -24,6 +24,14 @@ interface CacheData {
   lastAnswerIsKnown: boolean;
 }
 
+// 🌟 修复点 1：为原来的匿名对象提供显式接口定义
+interface DailyQueueData {
+  wordQueue: WordEntry[];
+  initialNewWordIds: string[];
+  sessionTotalNew: number;
+  sessionTotalReview: number;
+}
+
 @Entry
 @Component
 struct LearningSessionPage {
@@ -31,7 +39,7 @@ struct LearningSessionPage {
   @State currentIndex: number = 0;
   @State isShowDetails: boolean = false;
   @State isLoading: boolean = true;
-  @State currentProgress: WordProgress = { wordId: '', repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: 0 }
+  @State currentProgress: WordProgress = { wordId: '', repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: 0 } as WordProgress;
 
   @State sessionTotalNew: number = 0;
   @State sessionTotalReview: number = 0;
@@ -87,7 +95,8 @@ struct LearningSessionPage {
 
   async loadWords() {
     this.isLoading = true;
-    let params = router.getParams() as Record<string, string | string[]>;
+    // 🌟 修复点 2：统一使用 Record<string, Object>
+    let params = router.getParams() as Record<string, Object>;
 
     if (params && params['mode'] === 'collection') {
       this.isCollectionMode = true;
@@ -155,22 +164,49 @@ struct LearningSessionPage {
           return;
         }
       }
-      this.wordQueue = await WordService.generateTodayQueue(getContext(this), plan);
+
+      let queueStr = await UserManager.getDailyQueue(getContext(this), this.currentBookId, today);
+      if (queueStr) {
+        let dailyData = JSON.parse(queueStr) as DailyQueueData;
+        this.wordQueue = dailyData.wordQueue;
+        this.initialNewWordIds = dailyData.initialNewWordIds;
+        this.sessionTotalNew = dailyData.sessionTotalNew;
+        this.sessionTotalReview = dailyData.sessionTotalReview;
+
+        this.currentIndex = 0;
+        this.sessionFinishedNew = 0;
+        this.sessionFinishedReview = 0;
+        this.completedWordIds = [];
+        this.isShowDetails = false;
+        this.lastAnswerIsKnown = false;
+      } else {
+        this.wordQueue = await WordService.generateTodayQueue(getContext(this), plan);
+        if (this.wordQueue.length > 0) {
+          let map = await ProgressManager.getProgressMap(getContext(this));
+          for (let word of this.wordQueue) {
+            let rawId = word.content.word.wordId;
+            let namespacedId = `${this.currentBookId}_${rawId}`;
+            if (map[namespacedId]) {
+              this.sessionTotalReview++;
+            } else {
+              this.sessionTotalNew++;
+              this.initialNewWordIds.push(rawId);
+            }
+          }
+
+          // 🌟 修复点 3：通过显式接口类型告别匿名对象报错
+          let dailyData: DailyQueueData = {
+            wordQueue: this.wordQueue,
+            initialNewWordIds: this.initialNewWordIds,
+            sessionTotalNew: this.sessionTotalNew,
+            sessionTotalReview: this.sessionTotalReview
+          };
+          await UserManager.saveDailyQueue(getContext(this), this.currentBookId, today, JSON.stringify(dailyData));
+        }
+      }
     }
 
     if (this.wordQueue.length > 0) {
-      if (!this.isCollectionMode) {
-        let map = await ProgressManager.getProgressMap(getContext(this));
-        for (let word of this.wordQueue) {
-          let wId = word.content.word.wordId;
-          if (map[wId]) {
-            this.sessionTotalReview++;
-          } else {
-            this.sessionTotalNew++;
-            this.initialNewWordIds.push(wId);
-          }
-        }
-      }
       await this.prepareCurrentWord();
       this.saveSessionToCache();
     } else {
@@ -181,24 +217,26 @@ struct LearningSessionPage {
   }
 
   async prepareCurrentWord() {
-    let wordId = this.wordQueue[this.currentIndex].content.word.wordId;
+    let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
+    let namespacedId = `${this.currentBookId}_${rawId}`;
 
     let map = await ProgressManager.getProgressMap(getContext(this));
-    if (map[wordId]) {
-      this.currentProgress = map[wordId];
+    if (map[namespacedId]) {
+      this.currentProgress = map[namespacedId];
     } else {
-      this.currentProgress = { wordId: wordId, repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: Date.now() }
+      // 🌟 强制断言
+      this.currentProgress = { wordId: namespacedId, repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: Date.now() } as WordProgress;
     }
-    this.isCurrentWordCollected = await CollectionManager.isCollected(getContext(this), this.currentBookId, wordId);
+    this.isCurrentWordCollected = await CollectionManager.isCollected(getContext(this), this.currentBookId, rawId);
   }
 
   async toggleStar() {
-    let wordId = this.wordQueue[this.currentIndex].content.word.wordId;
+    let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
     this.isCurrentWordCollected = await CollectionManager.toggleCollection(
       getContext(this),
       this.currentBookId,
       this.currentBookName,
-      wordId
+      rawId
     );
     promptAction.showToast({ message: this.isCurrentWordCollected ? '已加入收藏' : '已取消收藏' });
   }
@@ -210,28 +248,26 @@ struct LearningSessionPage {
       interval: this.currentProgress.interval,
       efactor: this.currentProgress.efactor,
       nextReviewDate: this.currentProgress.nextReviewDate
-    };
+    } as WordProgress;
     this.lastAnswerIsKnown = isKnown;
 
     let newProgress = Ebbinghaus.calculateNextReview(this.currentProgress, isKnown);
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
     this.currentProgress = newProgress;
 
-    let wId = this.currentProgress.wordId;
+    let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
 
-    if (isKnown && !this.completedWordIds.includes(wId)) {
-      this.completedWordIds.push(wId);
+    if (isKnown && !this.completedWordIds.includes(rawId)) {
+      this.completedWordIds.push(rawId);
       if (this.isCollectionMode) {
         this.sessionFinishedReview++;
       } else {
-        if (this.initialNewWordIds.includes(wId)) {
+        if (this.initialNewWordIds.includes(rawId)) {
           this.sessionFinishedNew++;
           await UserManager.updateUserStats(getContext(this), 1, 0);
 
-          // 🌟 修复 Bug 1：只有真正掌握了新的词，书本总进度才加 1
           let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
           AppStorage.setOrCreate('totalLearnedInBook', currentTotal + 1);
-
         } else {
           this.sessionFinishedReview++;
           await UserManager.updateUserStats(getContext(this), 0, 1);
@@ -253,22 +289,20 @@ struct LearningSessionPage {
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
     this.currentProgress = newProgress;
 
-    let wId = this.currentProgress.wordId;
-    let index = this.completedWordIds.indexOf(wId);
+    let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
+    let index = this.completedWordIds.indexOf(rawId);
 
     if (index > -1) {
       this.completedWordIds.splice(index, 1);
       if (this.isCollectionMode) {
         this.sessionFinishedReview--;
       } else {
-        if (this.initialNewWordIds.includes(wId)) {
+        if (this.initialNewWordIds.includes(rawId)) {
           this.sessionFinishedNew--;
           await UserManager.updateUserStats(getContext(this), -1, 0);
 
-          // 🌟 修复 Bug 1（反向撤销）：新词记错了撤回，书本总进度也减 1
           let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
           AppStorage.setOrCreate('totalLearnedInBook', Math.max(0, currentTotal - 1));
-
         } else {
           this.sessionFinishedReview--;
           await UserManager.updateUserStats(getContext(this), 0, -1);
@@ -293,6 +327,7 @@ struct LearningSessionPage {
 
       if (!this.isCollectionMode) {
         await UserManager.clearActiveSession(getContext(this));
+        await UserManager.clearDailyQueue(getContext(this), this.currentBookId, new Date().toDateString());
         await UserManager.recordCheckIn(getContext(this));
         promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
       } else {
