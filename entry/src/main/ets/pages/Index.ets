@@ -12,11 +12,12 @@ struct MainPage {
     Column() {
       Image(icon)
         .width(24).height(24)
-        .fillColor(this.currentIndex === index ? '#007DFF' : '#999')
+        // 🌟 细节优化：选中颜色改为与主题呼应的亮橙色，未选中保持灰色
+        .fillColor(this.currentIndex === index ? '#FF9800' : '#999')
       Text(title)
         .margin({ top: 4 })
         .fontSize(12)
-        .fontColor(this.currentIndex === index ? '#007DFF' : '#999')
+        .fontColor(this.currentIndex === index ? '#FF9800' : '#999')
     }
     .justifyContent(FlexAlign.Center)
     .width('100%')
@@ -37,5 +38,7 @@ struct MainPage {
       this.currentIndex = index
     })
     .barHeight(60)
+    // 🌟 核心修改：设置底部导航栏的背景颜色为高级淡灰色
+    .barBackgroundColor('#F7F7F7')
   }
 }

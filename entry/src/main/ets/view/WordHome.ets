@@ -14,14 +14,13 @@ export struct WordHome {
 
   @StorageLink('totalLearnedInBook') totalLearnedInBook: number = 0;
 
-  // 🌟 新增：计划变动侦测器，记录上一次看到的计划
+  // 计划变动侦测器
   private lastSeenPlanStr: string = '';
 
   async aboutToAppear() {
     if (!this.user) {
       await UserManager.autoLogin(getContext(this));
     }
-    // 启动时初始化侦测器
     if (this.plan) {
       this.lastSeenPlanStr = JSON.stringify(this.plan);
     }
@@ -31,10 +30,8 @@ export struct WordHome {
   async refreshDailyState() {
     if (!this.user || !this.plan) return;
 
-    // 🌟 核心修复 1：比对计划是否发生过调整
     let currentPlanStr = JSON.stringify(this.plan);
     let isPlanAdjusted = false;
-    // 如果内存中有旧计划，且旧计划和现在的计划不同，说明用户刚刚去调整了计划！
     if (this.lastSeenPlanStr !== '' && this.lastSeenPlanStr !== currentPlanStr) {
       isPlanAdjusted = true;
     }
@@ -54,10 +51,8 @@ export struct WordHome {
     let today = new Date().toDateString();
     let isBookSwitched = dbUser.currentStudyBookId !== this.plan.bookId;
 
-    // 🌟 核心修复 2：将 `isPlanAdjusted` 加入到重建任务的条件中
     if (dbUser.lastStudyDate !== today || !dbUser.todayTarget || dbUser.todayTarget === 0 || dbUser.todayStudiedCount === undefined || isBookSwitched || isPlanAdjusted) {
 
-      // 🌟 核心修复 3：如果是调整了计划或换书，直接捏碎当天的旧队列和旧断点！
       if (isBookSwitched || isPlanAdjusted) {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.clearDailyQueue(getContext(this), this.plan.bookId, today);
@@ -86,12 +81,10 @@ export struct WordHome {
         lastStudyDate: today,
         currentStudyBookId: this.plan.bookId,
 
-        // 🌟 保护伞：虽然队列清空了，但今天已经背过的数据量（进度条）完美保留！
         todayStudiedCount: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedCount || 0) : 0,
         todayStudiedNew: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedNew || 0) : 0,
         todayStudiedReview: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedReview || 0) : 0,
 
-        // 目标额度变更为新计划的额度
         todayTargetNew: targetNew,
         todayTargetReview: targetReview,
         todayTarget: targetNew + targetReview
@@ -110,34 +103,52 @@ export struct WordHome {
 
   build() {
     Column() {
-      Row() { Text('背单词').fontSize(24).fontWeight(FontWeight.Bold).margin({ left: 20 }) }.width('100%').height(60).backgroundColor(Color.White)
+      // 头部栏：图标 + 标题
+      Row() {
+        Image($r('app.media.ic_duck'))
+          .width(32)
+          .height(32)
+          .margin({ left: 20, right: 10 })
+        Text('背词鸭')
+          .fontSize(24)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#333')
+      }.width('100%').height(60)
 
       if (!this.user) {
         Column() {
           Image($r('app.media.user_avatar')).width(80).height(80).margin({ bottom: 20, top: 100 }).backgroundColor('#DDD').borderRadius(40)
           Text('登录后开启背单词之旅').fontSize(18).fontColor('#666').margin({ bottom: 40 })
-          Button('去登录 / 注册').width('80%').height(50).backgroundColor('#4CAF50').onClick(() => router.pushUrl({ url: 'pages/LoginPage' }))
+          Button('去登录 / 注册').width('80%').height(50).backgroundColor('#FFCA28').fontColor('#333').onClick(() => router.pushUrl({ url: 'pages/LoginPage' }))
         }.width('100%').layoutWeight(1).alignItems(HorizontalAlign.Center)
       } else if (!this.plan) {
         Column() {
           Text(`你好，${this.user.username}！`).fontSize(24).fontWeight(FontWeight.Bold).margin({ top: 80, bottom: 20 })
           Text('你还没有制定学习计划，无法开始学习。').fontSize(16).fontColor('#666').margin({ bottom: 50 })
-          Button('选择我的第一本词书').width('80%').height(50).backgroundColor('#FF9800').onClick(() => router.pushUrl({ url: 'pages/BookSelectPage' }))
+          Button('选择我的第一本词书').width('80%').height(50).backgroundColor('#FFCA28').fontColor('#333').onClick(() => router.pushUrl({ url: 'pages/BookSelectPage' }))
         }.width('100%').layoutWeight(1).alignItems(HorizontalAlign.Center)
       } else {
         Scroll() {
           Column() {
+            // 🌟 栏目 1：更换词书与任务总览
             Column() {
-              Row() { Text(this.plan.bookName).fontSize(22).fontWeight(FontWeight.Bold); Blank(); Text('更换词书 >').fontSize(14).fontColor('#4CAF50').onClick(() => { router.pushUrl({ url: 'pages/BookSelectPage' }) }) }.width('100%')
+              Row() { Text(this.plan.bookName).fontSize(22).fontWeight(FontWeight.Bold); Blank(); Text('更换词书 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/BookSelectPage' }) }) }.width('100%')
               Row() {
-                Column() { Text('今日新词').fontSize(14).fontColor('#666'); Text((this.user.todayTargetNew !== undefined ? this.user.todayTargetNew : 0).toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#4CAF50') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
-                Divider().height(30).vertical(true).backgroundColor('#DDD')
-                Column() { Text('今日复习').fontSize(14).fontColor('#666'); Text((this.user.todayTargetReview !== undefined ? this.user.todayTargetReview : 0).toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#FF9800') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
-                Divider().height(30).vertical(true).backgroundColor('#DDD')
-                Column() { Text('总词数').fontSize(14).fontColor('#666'); Text(this.plan.totalWords.toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#2196F3') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
+                Column() { Text('今日新词').fontSize(14).fontColor('#666'); Text((this.user.todayTargetNew !== undefined ? this.user.todayTargetNew : 0).toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#FF9800') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
+                Divider().height(30).vertical(true).backgroundColor('#E0E0E0') // 分割线稍微调浅一点
+                Column() { Text('今日复习').fontSize(14).fontColor('#666'); Text((this.user.todayTargetReview !== undefined ? this.user.todayTargetReview : 0).toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#FFCA28') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
+                Divider().height(30).vertical(true).backgroundColor('#E0E0E0')
+                Column() { Text('总词数').fontSize(14).fontColor('#666'); Text(this.plan.totalWords.toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
               }.width('100%').margin({ top: 20 })
-            }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
+            }
+            .width('90%')
+            .padding(20)
+            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
+            .borderRadius(15)
+            .margin({ top: 20 })
+            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 }) // 加一点点阴影增加质感
 
+            // 🌟 栏目 2：词书总进度
             Column() {
               Row() {
                 Text('词书总进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
@@ -146,17 +157,31 @@ export struct WordHome {
               }.width('100%').margin({ bottom: 10 })
 
               Progress({ value: this.totalLearnedInBook, total: this.plan.totalWords || 1, type: ProgressType.Linear })
-                .width('100%').color('#2196F3').backgroundColor('#E3F2FD').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
-            }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
+                .width('100%').color('#FFCA28').backgroundColor('#FFF8E1').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
+            }
+            .width('90%')
+            .padding(20)
+            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
+            .borderRadius(15)
+            .margin({ top: 20 })
+            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
+            // 🌟 栏目 3：学习计划
             Column() {
-              Row() { Text('学习计划').fontSize(18).fontWeight(FontWeight.Bold); Blank(); Text('调整计划 >').fontSize(14).fontColor('#4CAF50').onClick(() => { router.pushUrl({ url: 'pages/StudyPlanPage' }) }) }.width('100%')
-              Divider().margin({ top: 10, bottom: 10 })
-              Row() { Text('每日新词').fontSize(16); Blank(); Text(this.plan.dailyNew + ' 词').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#4CAF50') }.width('100%').margin({ bottom: 10 })
-              Row() { Text('每日复习').fontSize(16); Blank(); Text(this.plan.dailyReview + ' 词').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FF9800') }.width('100%').margin({ bottom: 10 })
+              Row() { Text('学习计划').fontSize(18).fontWeight(FontWeight.Bold); Blank(); Text('调整计划 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/StudyPlanPage' }) }) }.width('100%')
+              Divider().margin({ top: 10, bottom: 10 }).color('#E0E0E0')
+              Row() { Text('每日新词').fontSize(16); Blank(); Text(this.plan.dailyNew + ' 词').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FF9800') }.width('100%').margin({ bottom: 10 })
+              Row() { Text('每日复习').fontSize(16); Blank(); Text(this.plan.dailyReview + ' 词').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FFCA28') }.width('100%').margin({ bottom: 10 })
               Row() { Text('学习模式').fontSize(16); Blank(); Text(this.plan.studyMode === 0 ? '先学新词再复习' : '新词复习混合').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#666') }.width('100%').margin({ bottom: 10 })
-            }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
+            }
+            .width('90%')
+            .padding(20)
+            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
+            .borderRadius(15)
+            .margin({ top: 20 })
+            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
+            // 🌟 栏目 4：今日进度
             Column() {
               Row() {
                 Text('今日进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
@@ -165,11 +190,17 @@ export struct WordHome {
               }.width('100%').margin({ bottom: 10 })
 
               Progress({ value: this.user.todayStudiedCount !== undefined ? this.user.todayStudiedCount : 0, total: this.user.todayTarget || 1, type: ProgressType.Linear })
-                .width('100%').color('#4CAF50').backgroundColor('#E8F5E9').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
-            }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(15).margin({ top: 20 })
+                .width('100%').color('#FFCA28').backgroundColor('#FFF8E1').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
+            }
+            .width('90%')
+            .padding(20)
+            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
+            .borderRadius(15)
+            .margin({ top: 20 })
+            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
             Button(this.user.todayStudiedCount !== undefined && this.user.todayTarget !== undefined && this.user.todayStudiedCount > 0 && this.user.todayStudiedCount < this.user.todayTarget ? '继续学习' : '开始背单词')
-              .width('90%').height(50).backgroundColor('#4CAF50').margin({ top: 30, bottom: 30 })
+              .width('90%').height(50).backgroundColor('#FFCA28').fontColor('#333').margin({ top: 30, bottom: 30 })
               .onClick(() => {
 
                 if (this.totalLearnedInBook >= this.plan!.totalWords && this.plan!.totalWords > 0) {
@@ -224,7 +255,7 @@ export struct WordHome {
                     message: '您已完成今天的专属背词任务！是否要开启额外加练？',
                     buttons: [
                       { text: '休息一下', color: '#999' },
-                      { text: '继续加练', color: '#4CAF50' }
+                      { text: '继续加练', color: '#FFCA28' }
                     ]
                   }).then(async (data) => {
                     if (data.index === 1) {
@@ -241,6 +272,14 @@ export struct WordHome {
         }.layoutWeight(1)
       }
     }
-    .width('100%').height('100%').backgroundColor('#F5F5F5')
+    .width('100%').height('100%')
+    .linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [
+        ['#FFFDE7', 0.0],
+        ['#FFF9C4', 0.3],
+        ['#F5F5F5', 1.0]
+      ]
+    })
   }
 }
