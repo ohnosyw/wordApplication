@@ -14,12 +14,11 @@ export struct WordHome {
 
   @StorageLink('totalLearnedInBook') totalLearnedInBook: number = 0;
 
-  // 计划变动侦测器
   private lastSeenPlanStr: string = '';
 
   async aboutToAppear() {
     if (!this.user) {
-      await UserManager.autoLogin(getContext(this));
+      UserManager.autoLogin(getContext(this));
     }
     if (this.plan) {
       this.lastSeenPlanStr = JSON.stringify(this.plan);
@@ -103,7 +102,7 @@ export struct WordHome {
 
   build() {
     Column() {
-      // 头部栏：图标 + 标题
+      // 头部栏：恢复大气尺寸
       Row() {
         Image($r('app.media.ic_duck'))
           .width(32)
@@ -128,148 +127,155 @@ export struct WordHome {
           Button('选择我的第一本词书').width('80%').height(50).backgroundColor('#FFCA28').fontColor('#333').onClick(() => router.pushUrl({ url: 'pages/BookSelectPage' }))
         }.width('100%').layoutWeight(1).alignItems(HorizontalAlign.Center)
       } else {
-        Scroll() {
+        // 🌟 核心修改：利用 SpaceEvenly 让组件饱满地撑开整个屏幕，去掉了不必要的固定外边距
+        Column() {
+
+          // 栏目 1：更换词书与任务总览 (恢复大号字体和间距)
           Column() {
-            // 🌟 栏目 1：更换词书与任务总览
-            Column() {
-              Row() { Text(this.plan.bookName).fontSize(22).fontWeight(FontWeight.Bold); Blank(); Text('更换词书 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/BookSelectPage' }) }) }.width('100%')
-              Row() {
-                Column() { Text('今日新词').fontSize(14).fontColor('#666'); Text((this.user.todayTargetNew !== undefined ? this.user.todayTargetNew : 0).toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#FF9800') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
-                Divider().height(30).vertical(true).backgroundColor('#E0E0E0') // 分割线稍微调浅一点
-                Column() { Text('今日复习').fontSize(14).fontColor('#666'); Text((this.user.todayTargetReview !== undefined ? this.user.todayTargetReview : 0).toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#FFCA28') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
-                Divider().height(30).vertical(true).backgroundColor('#E0E0E0')
-                Column() { Text('总词数').fontSize(14).fontColor('#666'); Text(this.plan.totalWords.toString()).fontSize(28).fontWeight(FontWeight.Bold).fontColor('#333') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
-              }.width('100%').margin({ top: 20 })
-            }
-            .width('90%')
-            .padding(20)
-            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
-            .borderRadius(15)
-            .margin({ top: 20 })
-            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 }) // 加一点点阴影增加质感
+            Row() { Text(this.plan.bookName).fontSize(20).fontWeight(FontWeight.Bold); Blank(); Text('更换词书 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/BookSelectPage' }) }) }.width('100%')
+            Row() {
+              Column() { Text('今日新词').fontSize(14).fontColor('#666'); Text((this.user.todayTargetNew !== undefined ? this.user.todayTargetNew : 0).toString()).fontSize(26).fontWeight(FontWeight.Bold).fontColor('#FF9800') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
+              Divider().height(26).vertical(true).backgroundColor('#E0E0E0')
+              Column() { Text('今日复习').fontSize(14).fontColor('#666'); Text((this.user.todayTargetReview !== undefined ? this.user.todayTargetReview : 0).toString()).fontSize(26).fontWeight(FontWeight.Bold).fontColor('#FFCA28') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
+              Divider().height(26).vertical(true).backgroundColor('#E0E0E0')
+              Column() { Text('总词数').fontSize(14).fontColor('#666'); Text(this.plan.totalWords.toString()).fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333') }.layoutWeight(1).alignItems(HorizontalAlign.Center)
+            }.width('100%').margin({ top: 16 })
+          }
+          .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
+          .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-            // 🌟 栏目 2：词书总进度
-            Column() {
-              Row() {
-                Text('词书总进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
-                Blank()
-                Text(`${this.totalLearnedInBook} / ${this.plan.totalWords} 词`).fontSize(14).fontColor('#666')
-              }.width('100%').margin({ bottom: 10 })
+          // 🌟 栏目 2：词书总进度 (换成 ic_duck2)
+          Column() {
+            Row() {
+              Text('词书总进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
+              Blank()
+              Text(`${this.totalLearnedInBook} / ${this.plan.totalWords} 词`).fontSize(14).fontColor('#666')
+            }.width('100%').margin({ bottom: 12 })
 
-              Progress({ value: this.totalLearnedInBook, total: this.plan.totalWords || 1, type: ProgressType.Linear })
-                .width('100%').color('#FFCA28').backgroundColor('#FFF8E1').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
-            }
-            .width('90%')
-            .padding(20)
-            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
-            .borderRadius(15)
-            .margin({ top: 20 })
-            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
+            Stack({ alignContent: Alignment.Start }) {
+              Row().width('100%').height(12).backgroundColor('#FFF8E1').borderRadius(6)
+              Row().width(`${this.plan.totalWords > 0 ? (this.totalLearnedInBook / this.plan.totalWords) * 100 : 0}%`).height(12).backgroundColor('#FFCA28').borderRadius(6).animation({ duration: 500, curve: Curve.EaseInOut })
 
-            // 🌟 栏目 3：学习计划
-            Column() {
-              Row() { Text('学习计划').fontSize(18).fontWeight(FontWeight.Bold); Blank(); Text('调整计划 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/StudyPlanPage' }) }) }.width('100%')
-              Divider().margin({ top: 10, bottom: 10 }).color('#E0E0E0')
-              Row() { Text('每日新词').fontSize(16); Blank(); Text(this.plan.dailyNew + ' 词').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FF9800') }.width('100%').margin({ bottom: 10 })
-              Row() { Text('每日复习').fontSize(16); Blank(); Text(this.plan.dailyReview + ' 词').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#FFCA28') }.width('100%').margin({ bottom: 10 })
-              Row() { Text('学习模式').fontSize(16); Blank(); Text(this.plan.studyMode === 0 ? '先学新词再复习' : '新词复习混合').fontSize(16).fontWeight(FontWeight.Medium).fontColor('#666') }.width('100%').margin({ bottom: 10 })
-            }
-            .width('90%')
-            .padding(20)
-            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
-            .borderRadius(15)
-            .margin({ top: 20 })
-            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
+              // 🌟 替换为 ic_duck2，并恢复饱满尺寸
+              Image($r('app.media.ic_duck2'))
+                .width(28).height(28)
+                .margin({ left: `${this.plan.totalWords > 0 ? (this.totalLearnedInBook / this.plan.totalWords) * 100 : 0}%` })
+                .offset({ x: -14, y: 0 })
+                .animation({ duration: 500, curve: Curve.EaseInOut })
+            }.width('100%').height(28).padding({ left: 14, right: 14 })
+          }
+          .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
+          .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-            // 🌟 栏目 4：今日进度
-            Column() {
-              Row() {
-                Text('今日进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
-                Blank()
-                Text(`${this.user.todayStudiedCount !== undefined ? this.user.todayStudiedCount : 0} / ${this.user.todayTarget !== undefined ? this.user.todayTarget : 0} 词`).fontSize(14).fontColor('#666')
-              }.width('100%').margin({ bottom: 10 })
+          // 栏目 3：学习计划
+          Column() {
+            Row() { Text('学习计划').fontSize(16).fontWeight(FontWeight.Bold); Blank(); Text('调整计划 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/StudyPlanPage' }) }) }.width('100%')
+            Divider().margin({ top: 10, bottom: 10 }).color('#E0E0E0')
+            Row() { Text('每日新词').fontSize(15).fontColor('#555'); Blank(); Text(this.plan.dailyNew + ' 词').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#FF9800') }.width('100%').margin({ bottom: 8 })
+            Row() { Text('每日复习').fontSize(15).fontColor('#555'); Blank(); Text(this.plan.dailyReview + ' 词').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#FFCA28') }.width('100%').margin({ bottom: 8 })
+            Row() { Text('学习模式').fontSize(15).fontColor('#555'); Blank(); Text(this.plan.studyMode === 0 ? '先学新词再复习' : '新词复习混合').fontSize(15).fontWeight(FontWeight.Medium).fontColor('#666') }.width('100%')
+          }
+          .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
+          .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-              Progress({ value: this.user.todayStudiedCount !== undefined ? this.user.todayStudiedCount : 0, total: this.user.todayTarget || 1, type: ProgressType.Linear })
-                .width('100%').color('#FFCA28').backgroundColor('#FFF8E1').style({ strokeWidth: 12 }).animation({ duration: 500, curve: Curve.EaseInOut })
-            }
-            .width('90%')
-            .padding(20)
-            .backgroundColor('#F7F7F7') // 🌟 替换为淡灰色
-            .borderRadius(15)
-            .margin({ top: 20 })
-            .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
+          // 🌟 栏目 4：今日进度 (换成 ic_duck2)
+          Column() {
+            Row() {
+              Text('今日进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
+              Blank()
+              Text(`${this.user.todayStudiedCount !== undefined ? this.user.todayStudiedCount : 0} / ${this.user.todayTarget !== undefined ? this.user.todayTarget : 0} 词`).fontSize(14).fontColor('#666')
+            }.width('100%').margin({ bottom: 12 })
 
-            Button(this.user.todayStudiedCount !== undefined && this.user.todayTarget !== undefined && this.user.todayStudiedCount > 0 && this.user.todayStudiedCount < this.user.todayTarget ? '继续学习' : '开始背单词')
-              .width('90%').height(50).backgroundColor('#FFCA28').fontColor('#333').margin({ top: 30, bottom: 30 })
-              .onClick(() => {
+            Stack({ alignContent: Alignment.Start }) {
+              Row().width('100%').height(12).backgroundColor('#FFF8E1').borderRadius(6)
+              Row().width(`${(this.user.todayTarget && this.user.todayTarget > 0) ? ((this.user.todayStudiedCount || 0) / this.user.todayTarget) * 100 : 0}%`).height(12).backgroundColor('#FFCA28').borderRadius(6).animation({ duration: 500, curve: Curve.EaseInOut })
 
-                if (this.totalLearnedInBook >= this.plan!.totalWords && this.plan!.totalWords > 0) {
-                  promptAction.showDialog({
-                    title: '🎉 恭喜完本！',
-                    message: `您已成功背完《${this.plan!.bookName}》所有单词！\n接下来您想重置进度开启二刷，还是更换一本新词书？\n（若选择更换，重置权限将在"已完成词书"中为您保留）`,
-                    buttons: [
-                      { text: '更换新词书', color: '#2196F3' },
-                      { text: '重置并二刷', color: '#F44336' }
-                    ]
-                  }).then(async (data) => {
-                    if (data.index === 0) {
-                      router.pushUrl({ url: 'pages/BookSelectPage' });
-                    } else if (data.index === 1) {
-                      await ProgressManager.clearBookProgress(getContext(this), this.plan!.bookId);
-                      AppStorage.setOrCreate('totalLearnedInBook', 0);
-                      await UserManager.clearActiveSession(getContext(this));
-                      await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
+              // 🌟 替换为 ic_duck2
+              Image($r('app.media.ic_duck2'))
+                .width(28).height(28)
+                .margin({ left: `${(this.user.todayTarget && this.user.todayTarget > 0) ? ((this.user.todayStudiedCount || 0) / this.user.todayTarget) * 100 : 0}%` })
+                .offset({ x: -14, y: 0 })
+                .animation({ duration: 500, curve: Curve.EaseInOut })
+            }.width('100%').height(28).padding({ left: 14, right: 14 })
+          }
+          .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
+          .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-                      let allUsers = await UserManager.getAllUsers(getContext(this));
-                      let realUser = allUsers[this.user!.userId];
-                      if (realUser) {
-                        realUser.todayStudiedCount = 0;
-                        realUser.todayStudiedNew = 0;
-                        realUser.todayStudiedReview = 0;
+          // 按钮恢复饱满尺寸
+          Button(this.user.todayStudiedCount !== undefined && this.user.todayTarget !== undefined && this.user.todayStudiedCount > 0 && this.user.todayStudiedCount < this.user.todayTarget ? '继续学习' : '开始背单词')
+            .width('90%').height(50).fontSize(18).backgroundColor('#FFCA28').fontColor('#333')
+            .onClick(() => {
+              if (this.totalLearnedInBook >= this.plan!.totalWords && this.plan!.totalWords > 0) {
+                promptAction.showDialog({
+                  title: '🎉 恭喜完本！',
+                  message: `您已成功背完《${this.plan!.bookName}》所有单词！\n接下来您想重置进度开启二刷，还是更换一本新词书？\n（若选择更换，重置权限将在"已完成词书"中为您保留）`,
+                  buttons: [
+                    { text: '更换新词书', color: '#2196F3' },
+                    { text: '重置并二刷', color: '#F44336' }
+                  ]
+                }).then(async (data) => {
+                  if (data.index === 0) {
+                    router.pushUrl({ url: 'pages/BookSelectPage' });
+                  } else if (data.index === 1) {
+                    await ProgressManager.clearBookProgress(getContext(this), this.plan!.bookId);
+                    AppStorage.setOrCreate('totalLearnedInBook', 0);
+                    await UserManager.clearActiveSession(getContext(this));
+                    await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
 
-                        let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
-                        realUser.todayTargetNew = taskInfo.newCount;
-                        realUser.todayTargetReview = taskInfo.reviewCount;
-                        realUser.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
+                    let allUsers = await UserManager.getAllUsers(getContext(this));
+                    let realUser = allUsers[this.user!.userId];
+                    if (realUser) {
+                      realUser.todayStudiedCount = 0;
+                      realUser.todayStudiedNew = 0;
+                      realUser.todayStudiedReview = 0;
 
-                        allUsers[realUser.userId] = realUser;
-                        let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
-                        await pref.put('AllUsers', JSON.stringify(allUsers));
-                        await pref.flush();
-
-                        UserManager.syncUserToAppStorage(realUser);
-                      }
-                      this.refreshDailyState();
-                      promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
-                    }
-                  });
-                  return;
-                }
-
-                let studied = this.user!.todayStudiedCount !== undefined ? this.user!.todayStudiedCount : 0;
-                let target = this.user!.todayTarget !== undefined ? this.user!.todayTarget : 0;
-
-                if (studied >= target && target > 0) {
-                  promptAction.showDialog({
-                    title: '🎉 今日任务已完成',
-                    message: '您已完成今天的专属背词任务！是否要开启额外加练？',
-                    buttons: [
-                      { text: '休息一下', color: '#999' },
-                      { text: '继续加练', color: '#FFCA28' }
-                    ]
-                  }).then(async (data) => {
-                    if (data.index === 1) {
                       let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
-                      await UserManager.addExtraTarget(getContext(this), this.plan!, taskInfo.availableNew, taskInfo.availableReview);
-                      router.pushUrl({ url: 'pages/LearningSessionPage' })
+                      realUser.todayTargetNew = taskInfo.newCount;
+                      realUser.todayTargetReview = taskInfo.reviewCount;
+                      realUser.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
+
+                      allUsers[realUser.userId] = realUser;
+                      let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
+                      await pref.put('AllUsers', JSON.stringify(allUsers));
+                      await pref.flush();
+
+                      UserManager.syncUserToAppStorage(realUser);
                     }
-                  })
-                } else {
-                  router.pushUrl({ url: 'pages/LearningSessionPage' })
-                }
-              })
-          }.width('100%')
-        }.layoutWeight(1)
+                    this.refreshDailyState();
+                    promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
+                  }
+                });
+                return;
+              }
+
+              let studied = this.user!.todayStudiedCount !== undefined ? this.user!.todayStudiedCount : 0;
+              let target = this.user!.todayTarget !== undefined ? this.user!.todayTarget : 0;
+
+              if (studied >= target && target > 0) {
+                promptAction.showDialog({
+                  title: '🎉 今日任务已完成',
+                  message: '您已完成今天的专属背词任务！是否要开启额外加练？',
+                  buttons: [
+                    { text: '休息一下', color: '#999' },
+                    { text: '继续加练', color: '#FFCA28' }
+                  ]
+                }).then(async (data) => {
+                  if (data.index === 1) {
+                    let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
+                    await UserManager.addExtraTarget(getContext(this), this.plan!, taskInfo.availableNew, taskInfo.availableReview);
+                    router.pushUrl({ url: 'pages/LearningSessionPage' })
+                  }
+                })
+              } else {
+                router.pushUrl({ url: 'pages/LearningSessionPage' })
+              }
+            })
+        }
+        .width('100%')
+        .layoutWeight(1) // 占满下方全部屏幕高度
+        // 🌟 核心：均匀分配剩余的所有垂直空间，自动撑满不留白！
+        .justifyContent(FlexAlign.SpaceEvenly)
+        .padding({ bottom: 10 }) // 底部稍微留一点点呼吸空间
       }
     }
     .width('100%').height('100%')
