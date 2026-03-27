@@ -14,16 +14,31 @@ export struct WordHome {
 
   @StorageLink('totalLearnedInBook') totalLearnedInBook: number = 0;
 
-  // 🌟 核心修复：一打开主页，强制自动登录！
+  // 🌟 新增：计划变动侦测器，记录上一次看到的计划
+  private lastSeenPlanStr: string = '';
+
   async aboutToAppear() {
     if (!this.user) {
       await UserManager.autoLogin(getContext(this));
+    }
+    // 启动时初始化侦测器
+    if (this.plan) {
+      this.lastSeenPlanStr = JSON.stringify(this.plan);
     }
     this.refreshDailyState();
   }
 
   async refreshDailyState() {
     if (!this.user || !this.plan) return;
+
+    // 🌟 核心修复 1：比对计划是否发生过调整
+    let currentPlanStr = JSON.stringify(this.plan);
+    let isPlanAdjusted = false;
+    // 如果内存中有旧计划，且旧计划和现在的计划不同，说明用户刚刚去调整了计划！
+    if (this.lastSeenPlanStr !== '' && this.lastSeenPlanStr !== currentPlanStr) {
+      isPlanAdjusted = true;
+    }
+    this.lastSeenPlanStr = currentPlanStr;
 
     let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan);
     this.totalLearnedInBook = taskInfo.totalLearned;
@@ -39,10 +54,13 @@ export struct WordHome {
     let today = new Date().toDateString();
     let isBookSwitched = dbUser.currentStudyBookId !== this.plan.bookId;
 
-    if (dbUser.lastStudyDate !== today || !dbUser.todayTarget || dbUser.todayTarget === 0 || dbUser.todayStudiedCount === undefined || isBookSwitched) {
+    // 🌟 核心修复 2：将 `isPlanAdjusted` 加入到重建任务的条件中
+    if (dbUser.lastStudyDate !== today || !dbUser.todayTarget || dbUser.todayTarget === 0 || dbUser.todayStudiedCount === undefined || isBookSwitched || isPlanAdjusted) {
 
-      if (isBookSwitched) {
+      // 🌟 核心修复 3：如果是调整了计划或换书，直接捏碎当天的旧队列和旧断点！
+      if (isBookSwitched || isPlanAdjusted) {
         await UserManager.clearActiveSession(getContext(this));
+        await UserManager.clearDailyQueue(getContext(this), this.plan.bookId, today);
       }
 
       let targetNew = taskInfo.newCount;
@@ -68,10 +86,12 @@ export struct WordHome {
         lastStudyDate: today,
         currentStudyBookId: this.plan.bookId,
 
+        // 🌟 保护伞：虽然队列清空了，但今天已经背过的数据量（进度条）完美保留！
         todayStudiedCount: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedCount || 0) : 0,
         todayStudiedNew: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedNew || 0) : 0,
         todayStudiedReview: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedReview || 0) : 0,
 
+        // 目标额度变更为新计划的额度
         todayTargetNew: targetNew,
         todayTargetReview: targetReview,
         todayTarget: targetNew + targetReview
