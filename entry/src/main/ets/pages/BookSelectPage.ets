@@ -4,7 +4,6 @@ import promptAction from '@ohos.promptAction'
 import { PlanData } from '../model/StudyPlan'
 import { UserManager, UserInfo } from '../utils/UserManager';
 
-// 定义词书接口
 interface BookInfo {
   id: string
   name: string
@@ -19,7 +18,8 @@ interface BookInfo {
 @Component
 struct BookSelectPage {
   @State selectedBookId: string = ''
-  // 词书数据
+
+  // 莫兰迪低饱和度配色方案
   private books: BookInfo[] = [
     {
       id: 'cet4',
@@ -27,7 +27,7 @@ struct BookSelectPage {
       description: '大学英语四级考试大纲词汇',
       totalWords: 3739,
       level: '基础',
-      color: '#4CAF50'
+      color: '#7EAC8A'
     },
     {
       id: 'cet6',
@@ -35,7 +35,7 @@ struct BookSelectPage {
       description: '大学英语六级考试大纲词汇',
       totalWords: 2078,
       level: '进阶',
-      color: '#FF9800'
+      color: '#D1A075'
     },
     {
       id: 'kaoyan',
@@ -43,16 +43,15 @@ struct BookSelectPage {
       description: '全国硕士研究生入学考试词汇',
       totalWords: 4533,
       level: '高阶',
-      color: '#F44336'
+      color: '#CB8585'
     },
-    // 以下为你新增的词书模块
     {
       id: 'junior_high',
       name: '初中英语词汇',
       description: '义务教育初中英语大纲词汇',
       totalWords: 1420,
       level: '入门',
-      color: '#8BC34A' // 浅绿色，代表启蒙与生机
+      color: '#A2B889'
     },
     {
       id: 'high_school',
@@ -60,7 +59,7 @@ struct BookSelectPage {
       description: '普通高中英语新课标大纲词汇',
       totalWords: 3668,
       level: '基础',
-      color: '#2196F3' // 蓝色，代表沉稳与理智
+      color: '#829DBF'
     },
     {
       id: 'ielts',
@@ -68,7 +67,7 @@ struct BookSelectPage {
       description: '雅思(IELTS)考试高频核心词汇',
       totalWords: 3427,
       level: '高阶',
-      color: '#9C27B0' // 紫色，代表雅思考试的经典色调
+      color: '#A68CB2'
     },
     {
       id: 'sat',
@@ -76,7 +75,7 @@ struct BookSelectPage {
       description: '美国大学入学考试(SAT)必备词汇',
       totalWords: 4423,
       level: '专家',
-      color: '#3F51B5' // 靛蓝色，代表学术与深度
+      color: '#7B88B5'
     },
     {
       id: 'gmat',
@@ -84,28 +83,27 @@ struct BookSelectPage {
       description: '经企管理研究生入学考试词汇',
       totalWords: 3254,
       level: '专家',
-      color: '#00BCD4' // 青色，代表商业逻辑与清晰严谨
+      color: '#7AAEB5'
     },
     {
       id: 'test_book',
       name: 'test_book',
-      description: 'test',
+      description: '测试词书1',
       totalWords: 5,
       level: '基础',
-      color: '#2196F3' // 蓝色，代表沉稳与理智
+      color: '#9CA3AF'
     },
     {
       id: 'test_book222',
       name: 'test_book2',
-      description: 'test2',
+      description: '测试词书2',
       totalWords: 7,
       level: '基础',
-      color: '#2196F3' // 蓝色，代表沉稳与理智
+      color: '#9CA3AF'
     }
   ]
 
   aboutToAppear() {
-    // 页面加载时，读取当前的计划，让正在背的词书处于选中高亮状态
     let currentPlan = AppStorage.get<PlanData>('studyPlan');
     if (currentPlan) {
       this.selectedBookId = currentPlan.bookId;
@@ -119,132 +117,126 @@ struct BookSelectPage {
         Image($r('app.media.ic_back'))
           .width(24)
           .height(24)
-          .margin({ left: 16 })
+          .margin({ left: 20 })
           .onClick(() => {
             router.back()
           })
 
         Text('选择词书')
           .fontSize(20)
-          .fontWeight(FontWeight.Bold)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#333')
           .margin({ left: 16 })
 
         Blank()
       }
       .width('100%')
-      .height(56)
+      .height(60)
       .backgroundColor(Color.White)
 
       // 词书列表
-      Scroll() {
-        Column() {
-          // 词书卡片列表 - 一行一个
-          Column() {
-            ForEach(this.books, (book: BookInfo) => {
-              this.createBookRow(book)
-            })
+      List() {
+        ForEach(this.books, (book: BookInfo) => {
+          ListItem() {
+            this.createBookRow(book)
           }
-          .width('100%')
-          .alignItems(HorizontalAlign.Center)
-          .margin({ top: 16 })
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Center)
+        })
       }
-      .backgroundColor('#F5F5F5')
+      .width('100%')
       .layoutWeight(1)
+      .backgroundColor(Color.White)
+      // 分割线
+      .divider({ strokeWidth: 0.5, color: '#F0F0F0', startMargin: 84, endMargin: 20 })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(Color.White)
   }
 
   @Builder
   createBookRow(book: BookInfo) {
-    Column() {
-      Row() {
-        if (book.icon) {
-          Image(book.icon)
-            .width(50)
-            .height(50)
-            .borderRadius(10)
-            .margin({ right: 16 })
-        } else {
-          // 使用颜色块作为默认图标
-          Column() {
-            Text(book.name.substring(0, 2))
-              .fontSize(18)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(Color.White)
-          }
-          .width(50)
-          .height(50)
-          .backgroundColor(book.color)
-          .borderRadius(10)
+    Row() {
+      if (book.icon) {
+        Image(book.icon)
+          .width(48)
+          .height(48)
+          .borderRadius(8)
           .margin({ right: 16 })
-          .alignItems(HorizontalAlign.Center)
-          .justifyContent(FlexAlign.Center)
-        }
-
-        // 词书信息 - 占据剩余空间
+      } else {
+        // 颜色块图标
         Column() {
-          Row() {
-            Text(book.name)
-              .fontSize(18)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#333')
-
-            Blank()
-
-            // 难度标签
-            Text(book.level)
-              .fontSize(12)
-              .fontColor(Color.White)
-              .padding({
-                left: 8,
-                right: 8,
-                top: 2,
-                bottom: 2
-              })
-              .backgroundColor(book.color)
-              .borderRadius(10)
-          }
-          .width('100%')
-
-          Row() {
-            Text(book.description)
-              .fontSize(14)
-              .fontColor('#666')
-
-            Blank()
-
-            Text(book.totalWords + '词')
-              .fontSize(14)
-              .fontColor('#999')
-          }
-          .width('100%')
-          .margin({ top: 4 })
+          Text(book.name.substring(0, 2))
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Color.White)
         }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+        .width(48)
+        .height(48)
+        .backgroundColor(book.color)
+        .borderRadius(8)
+        .margin({ right: 16 })
+        .alignItems(HorizontalAlign.Center)
+        .justifyContent(FlexAlign.Center)
       }
-      .width('100%')
-      .padding(16)
-      .backgroundColor(Color.White)
-      .borderRadius(12)
-      .border({
-        width: this.selectedBookId === book.id ? 2 : 0,
-        color: book.color
-      })
-      .onClick(() => {
-        this.selectBook(book)
-      })
+
+      // 词书信息
+      Column() {
+        Row() {
+          Text(book.name)
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#333')
+
+          Blank()
+
+          // 🌟 核心修改：全新设计的“学习中”高级灰标签
+          if (this.selectedBookId === book.id) {
+            Text('学习中')
+              .fontSize(12) // 稍微调大一号
+              .fontWeight(FontWeight.Bold) // 字体加粗，增强存在感
+              .fontColor('#666666') // 深灰色文字
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 }) // 增加内边距让标签更饱满
+              .backgroundColor('#E6E6E6') // 明显的浅灰底色，与深灰文字形成高级对比
+              .borderRadius(4)
+              .margin({ right: 8 })
+          }
+
+          // 难度标签
+          Text(book.level)
+            .fontSize(11)
+            .fontColor(Color.White)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor(book.color)
+            .borderRadius(4)
+        }
+        .width('100%')
+
+        Row() {
+          Text(book.description)
+            .fontSize(13)
+            .fontColor('#999')
+
+          Blank()
+
+          Text(book.totalWords + '词')
+            .fontSize(13)
+            .fontColor('#999')
+        }
+        .width('100%')
+        .margin({ top: 6 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
     }
-    .width('90%')
-    .margin({ bottom: 12 })
+    .width('100%')
+    .padding({ left: 20, right: 20, top: 18, bottom: 18 })
+    // 去掉整行的底色变化，保持列表的纯净感
+    .backgroundColor(Color.White)
+    .onClick(() => {
+      this.selectBook(book)
+    })
   }
 
-  // 核心：选书并保存到当前用户
   async selectBook(book: BookInfo) {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) {
@@ -255,7 +247,6 @@ struct BookSelectPage {
     this.selectedBookId = book.id;
     let currentPlan = AppStorage.get<PlanData>('studyPlan');
 
-    // 💡 修复点：避免使用 ArkTS 不支持的 ... 展开运算符，手动赋值生成新对象
     let updatedPlan: PlanData = {
       dailyNew: currentPlan ? currentPlan.dailyNew : 20,
       dailyReview: currentPlan ? currentPlan.dailyReview : 50,
@@ -265,10 +256,7 @@ struct BookSelectPage {
       totalWords: book.totalWords
     };
 
-    // 1. 更新内存，触发 UI 刷新
     AppStorage.setOrCreate('studyPlan', updatedPlan);
-
-    // 2. 写入当前用户的硬盘数据库
     await UserManager.saveUserPlan(getContext(this), currentUser.userId, updatedPlan);
 
     promptAction.showToast({ message: '已选择: ' + book.name, duration: 1500 });
