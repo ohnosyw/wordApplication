@@ -14,7 +14,11 @@ export struct WordHome {
 
   @StorageLink('totalLearnedInBook') totalLearnedInBook: number = 0;
 
-  aboutToAppear() {
+  // 🌟 核心修复：一打开主页，强制自动登录！
+  async aboutToAppear() {
+    if (!this.user) {
+      await UserManager.autoLogin(getContext(this));
+    }
     this.refreshDailyState();
   }
 
@@ -28,10 +32,14 @@ export struct WordHome {
       await UserManager.recordCompletedBook(getContext(this), this.plan);
     }
 
-    let today = new Date().toDateString();
-    let isBookSwitched = this.user.currentStudyBookId !== this.plan.bookId;
+    let users = await UserManager.getAllUsers(getContext(this));
+    let dbUser = users[this.user.userId];
+    if (!dbUser) return;
 
-    if (this.user.lastStudyDate !== today || !this.user.todayTarget || this.user.todayTarget === 0 || this.user.todayStudiedCount === undefined || isBookSwitched) {
+    let today = new Date().toDateString();
+    let isBookSwitched = dbUser.currentStudyBookId !== this.plan.bookId;
+
+    if (dbUser.lastStudyDate !== today || !dbUser.todayTarget || dbUser.todayTarget === 0 || dbUser.todayStudiedCount === undefined || isBookSwitched) {
 
       if (isBookSwitched) {
         await UserManager.clearActiveSession(getContext(this));
@@ -48,33 +56,35 @@ export struct WordHome {
       }
 
       let tempUser: UserInfo = {
-        userId: this.user.userId,
-        username: this.user.username,
-        password: this.user.password,
-        checkInDays: this.user.checkInDays,
-        totalWords: this.user.totalWords,
-        continuousCheckInDays: this.user.continuousCheckInDays,
-        lastCheckInDate: this.user.lastCheckInDate,
-        completedBooks: this.user.completedBooks,
+        userId: dbUser.userId,
+        username: dbUser.username,
+        password: dbUser.password,
+        checkInDays: dbUser.checkInDays,
+        totalWords: dbUser.totalWords,
+        continuousCheckInDays: dbUser.continuousCheckInDays,
+        lastCheckInDate: dbUser.lastCheckInDate,
+        completedBooks: dbUser.completedBooks,
 
         lastStudyDate: today,
         currentStudyBookId: this.plan.bookId,
 
-        todayStudiedCount: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedCount || 0) : 0,
-        todayStudiedNew: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedNew || 0) : 0,
-        todayStudiedReview: (this.user.lastStudyDate === today && !isBookSwitched) ? (this.user.todayStudiedReview || 0) : 0,
+        todayStudiedCount: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedCount || 0) : 0,
+        todayStudiedNew: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedNew || 0) : 0,
+        todayStudiedReview: (dbUser.lastStudyDate === today && !isBookSwitched) ? (dbUser.todayStudiedReview || 0) : 0,
 
         todayTargetNew: targetNew,
         todayTargetReview: targetReview,
         todayTarget: targetNew + targetReview
       };
 
-      let users = await UserManager.getAllUsers(getContext(this));
       users[tempUser.userId] = tempUser;
       let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
       await pref.put('AllUsers', JSON.stringify(users));
       await pref.flush();
-      AppStorage.setOrCreate('currentUser', tempUser);
+
+      UserManager.syncUserToAppStorage(tempUser);
+    } else {
+      UserManager.syncUserToAppStorage(dbUser);
     }
   }
 
@@ -159,24 +169,24 @@ export struct WordHome {
                       await UserManager.clearActiveSession(getContext(this));
                       await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
 
-                      if (this.user) {
-                        this.user.todayStudiedCount = 0;
-                        this.user.todayStudiedNew = 0;
-                        this.user.todayStudiedReview = 0;
+                      let allUsers = await UserManager.getAllUsers(getContext(this));
+                      let realUser = allUsers[this.user!.userId];
+                      if (realUser) {
+                        realUser.todayStudiedCount = 0;
+                        realUser.todayStudiedNew = 0;
+                        realUser.todayStudiedReview = 0;
 
-                        // 🌟 核心修复：唤醒雷达，根据空数据重新计算额度
                         let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
-                        this.user.todayTargetNew = taskInfo.newCount;
-                        this.user.todayTargetReview = taskInfo.reviewCount;
-                        this.user.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
+                        realUser.todayTargetNew = taskInfo.newCount;
+                        realUser.todayTargetReview = taskInfo.reviewCount;
+                        realUser.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
 
-                        let users = await UserManager.getAllUsers(getContext(this));
-                        users[this.user.userId] = this.user;
+                        allUsers[realUser.userId] = realUser;
                         let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
-                        await pref.put('AllUsers', JSON.stringify(users));
+                        await pref.put('AllUsers', JSON.stringify(allUsers));
                         await pref.flush();
 
-                        AppStorage.setOrCreate('currentUser', this.user);
+                        UserManager.syncUserToAppStorage(realUser);
                       }
                       this.refreshDailyState();
                       promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });

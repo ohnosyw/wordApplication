@@ -2,6 +2,7 @@
 import preferences from '@ohos.data.preferences';
 import promptAction from '@ohos.promptAction';
 import { PlanData } from '../model/StudyPlan';
+import { ProgressManager } from './ProgressManager'; // 🌟 引入刚修复的记忆库
 
 export interface CompletedBookInfo {
   bookId: string;
@@ -25,7 +26,6 @@ export interface UserInfo {
 
   continuousCheckInDays?: number;
   lastCheckInDate?: string;
-  // 🌟 升级：存储完整的书籍信息对象
   completedBooks?: CompletedBookInfo[];
 
   currentStudyBookId?: string;
@@ -34,17 +34,32 @@ export interface UserInfo {
 export class UserManager {
   private static PREF_NAME = 'UserDatabase';
   private static PROGRESS_DB_NAME = 'WordMemoryDB';
-  // 🌟 新增：显式声明收藏库的名字，用于跨库歼灭
   private static COLLECTION_DB_NAME = 'UserCollections';
   private static KEY_USERS = 'AllUsers';
   private static KEY_CURRENT = 'CurrentUserId';
+
+  static syncUserToAppStorage(user: UserInfo | null): void {
+    if (user) {
+      let safeUserStr = JSON.stringify(user);
+      let safeUser = JSON.parse(safeUserStr) as UserInfo;
+      AppStorage.setOrCreate('currentUser', safeUser);
+      let booksCount = safeUser.completedBooks ? safeUser.completedBooks.length : 0;
+      AppStorage.setOrCreate('completedBooksCount', booksCount);
+    } else {
+      AppStorage.setOrCreate('currentUser', null);
+      AppStorage.setOrCreate('completedBooksCount', 0);
+    }
+  }
 
   static async getAllUsers(context: Context): Promise<Record<string, UserInfo>> {
     try {
       let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
       let dataStr = await pref.get(UserManager.KEY_USERS, '{}') as string;
-      return JSON.parse(dataStr);
-    } catch (e) { return {}; }
+      return JSON.parse(dataStr) as Record<string, UserInfo>;
+    } catch (e) {
+      let emptyUsers: Record<string, UserInfo> = {};
+      return emptyUsers;
+    }
   }
 
   static async register(context: Context, user: UserInfo): Promise<boolean> {
@@ -68,7 +83,7 @@ export class UserManager {
     await pref.put(UserManager.KEY_CURRENT, userId);
     await pref.flush();
 
-    AppStorage.setOrCreate('currentUser', targetUser);
+    UserManager.syncUserToAppStorage(targetUser);
     let plan = await UserManager.getUserPlan(context, targetUser.userId);
     AppStorage.setOrCreate('studyPlan', plan);
     return true;
@@ -78,7 +93,11 @@ export class UserManager {
     let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
     await pref.delete(UserManager.KEY_CURRENT);
     await pref.flush();
-    AppStorage.setOrCreate('currentUser', null);
+
+    // 🌟 修复核心 2：退出时立刻粉碎内存
+    ProgressManager.clearMemoryCache();
+
+    UserManager.syncUserToAppStorage(null);
     AppStorage.setOrCreate('studyPlan', null);
     AppStorage.setOrCreate('totalLearnedInBook', 0);
   }
@@ -89,7 +108,7 @@ export class UserManager {
     if (currentId !== '') {
       let users = await UserManager.getAllUsers(context);
       if (users[currentId]) {
-        AppStorage.setOrCreate('currentUser', users[currentId]);
+        UserManager.syncUserToAppStorage(users[currentId]);
         let plan = await UserManager.getUserPlan(context, currentId);
         AppStorage.setOrCreate('studyPlan', plan);
       }
@@ -106,7 +125,7 @@ export class UserManager {
       await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
       await pref.flush();
       currentUser.username = newName;
-      AppStorage.setOrCreate('currentUser', currentUser);
+      UserManager.syncUserToAppStorage(currentUser);
       return true;
     }
     return false;
@@ -120,40 +139,49 @@ export class UserManager {
 
     if (users[userId]) {
       let newUsers: Record<string, UserInfo> = {};
-      let keys = Object.keys(users);
+      let keys = Object.keys(users) as string[];
       for (let i = 0; i < keys.length; i++) {
         let key = keys[i];
         if (key !== userId) newUsers[key] = users[key];
       }
 
-      // 1. 清理主数据库（账号信息、主线断点、每日队列快照等）
       let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
       await pref.put(UserManager.KEY_USERS, JSON.stringify(newUsers));
+
+      // 🌟 修复核心 3：全盘扫荡！彻底抹除该用户所有的历史队列残渣，防止复活
+      let allData = await pref.getAll() as Record<string, Object>;
+      let allKeys = Object.keys(allData) as string[];
+      for (let i = 0; i < allKeys.length; i++) {
+        let k = allKeys[i];
+        if (k.startsWith(`queue_${userId}_`) || k.startsWith(`session_${userId}`)) {
+          await pref.delete(k);
+        }
+      }
+
       await pref.delete(`plan_${userId}`);
-      await pref.delete(`session_${userId}`);
       await pref.delete(UserManager.KEY_CURRENT);
-      // 由于 queue 是按日期生成的动态键，注销时不便全量遍历，但主账号已毁，垃圾数据会被隔离，不再影响新同名用户。
       await pref.flush();
 
-      // 2. 清理进度数据库（艾宾浩斯记忆档案）
       let progressPref = await preferences.getPreferences(context, UserManager.PROGRESS_DB_NAME);
       await progressPref.delete(`user_${userId}_Progress`);
       await progressPref.flush();
 
-      // 3. 🌟 核心修复：全面清理第三大数据库 —— 收藏夹及收藏特训断点！
+      // 🌟 修复核心 4：强行拔掉高速缓存插头
+      ProgressManager.clearMemoryCache();
+
       let colPref = await preferences.getPreferences(context, UserManager.COLLECTION_DB_NAME);
       let colDataStr = await colPref.get(`col_${userId}`, '{}') as string;
-      let colData = JSON.parse(colDataStr) as Record<string, Object>;
-      // 遍历该用户之前所有的收藏夹，把为它们单独创建的“特训断点快照”全部物理粉碎
-      for (let bookId of Object.keys(colData)) {
+
+      let colData = JSON.parse(colDataStr) as Record<string, string>;
+      let colKeys = Object.keys(colData) as string[];
+      for (let i = 0; i < colKeys.length; i++) {
+        let bookId = colKeys[i];
         await colPref.delete(`col_session_${userId}_${bookId}`);
       }
-      // 粉碎收藏夹本体
       await colPref.delete(`col_${userId}`);
       await colPref.flush();
 
-      // 4. 重置内存变量
-      AppStorage.setOrCreate('currentUser', null);
+      UserManager.syncUserToAppStorage(null);
       AppStorage.setOrCreate('studyPlan', null);
       AppStorage.setOrCreate('totalLearnedInBook', 0);
       return true;
@@ -164,7 +192,7 @@ export class UserManager {
   static async getUserPlan(context: Context, userId: string): Promise<PlanData | null> {
     let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
     let planStr = await pref.get(`plan_${userId}`, '') as string;
-    if (planStr) return JSON.parse(planStr);
+    if (planStr) return JSON.parse(planStr) as PlanData;
     return null;
   }
 
@@ -198,7 +226,8 @@ export class UserManager {
       let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
       await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
       await pref.flush();
-      AppStorage.setOrCreate('currentUser', u);
+
+      UserManager.syncUserToAppStorage(u);
     }
   }
 
@@ -235,7 +264,8 @@ export class UserManager {
       let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
       await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
       await pref.flush();
-      AppStorage.setOrCreate('currentUser', u);
+
+      UserManager.syncUserToAppStorage(u);
     }
   }
 
@@ -308,7 +338,8 @@ export class UserManager {
       let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
       await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
       await pref.flush();
-      AppStorage.setOrCreate('currentUser', u);
+
+      UserManager.syncUserToAppStorage(u);
     }
   }
 
@@ -327,7 +358,8 @@ export class UserManager {
           let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
           await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
           await pref.flush();
-          AppStorage.setOrCreate('currentUser', u);
+
+          UserManager.syncUserToAppStorage(u);
         }
       }
     }
@@ -340,19 +372,20 @@ export class UserManager {
     let u = users[currentUser.userId];
     if (u) {
       if (!u.completedBooks) u.completedBooks = [];
-
-      // 兼容旧的 string 数据，防止崩溃
       if (u.completedBooks.length > 0 && typeof u.completedBooks[0] === 'string') {
         u.completedBooks = [];
       }
-
       let exists = u.completedBooks.some((b: CompletedBookInfo) => b.bookId === plan.bookId);
       if (!exists) {
-        u.completedBooks.push({ bookId: plan.bookId, bookName: plan.bookName, totalWords: plan.totalWords });
+        let newBook: CompletedBookInfo = { bookId: plan.bookId, bookName: plan.bookName, totalWords: plan.totalWords };
+        let newBooksArray: CompletedBookInfo[] = [...u.completedBooks, newBook];
+        u.completedBooks = newBooksArray;
+
         let pref = await preferences.getPreferences(context, UserManager.PREF_NAME);
         await pref.put(UserManager.KEY_USERS, JSON.stringify(users));
         await pref.flush();
-        AppStorage.setOrCreate('currentUser', u);
+
+        UserManager.syncUserToAppStorage(u);
       }
     }
   }

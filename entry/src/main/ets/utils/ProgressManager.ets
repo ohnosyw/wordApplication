@@ -1,82 +1,77 @@
 // entry/src/main/ets/utils/ProgressManager.ets
 import preferences from '@ohos.data.preferences';
 import { WordProgress } from './Ebbinghaus';
-// 引入 UserInfo 接口，确保路径与你的实际路径一致
 import { UserInfo } from './UserManager';
 
 export class ProgressManager {
-  // 数据库文件的名字，整个 App 共用这一个文件即可
   private static PREF_NAME = 'WordMemoryDB';
 
-  /**
-   * 获取当前登录用户的所有单词记忆进度
-   */
+  // 高速缓存
+  private static memoryCache: Record<string, WordProgress> | null = null;
+  private static currentUserId: string = '';
+
+  // 🌟 核心修复 1：新增暴露给外部的内存粉碎方法
+  static clearMemoryCache(): void {
+    ProgressManager.memoryCache = null;
+    ProgressManager.currentUserId = '';
+  }
+
   static async getProgressMap(context: Context): Promise<Record<string, WordProgress>> {
     try {
-      // 1. 获取本地数据库实例
-      let pref = await preferences.getPreferences(context, ProgressManager.PREF_NAME);
-
-      // 2. 从内存中获取当前登录的用户
       let currentUser = AppStorage.get<UserInfo>('currentUser');
       if (!currentUser || !currentUser.userId) {
-        console.warn('ProgressManager', '当前无用户登录，返回空进度');
-        return {};
+        let emptyMap: Record<string, WordProgress> = {};
+        return emptyMap;
       }
 
-      // 3. 核心：动态生成属于该用户的独有 Key（例如：user_1380000_Progress）
-      let userKey = `user_${currentUser.userId}_Progress`;
+      if (ProgressManager.memoryCache && ProgressManager.currentUserId === currentUser.userId) {
+        return ProgressManager.memoryCache;
+      }
 
-      // 4. 读取属于该用户的进度数据
+      let pref = await preferences.getPreferences(context, ProgressManager.PREF_NAME);
+      let userKey = `user_${currentUser.userId}_Progress`;
       let dataString = await pref.get(userKey, '{}') as string;
-      return JSON.parse(dataString);
+
+      let parsedData = JSON.parse(dataString) as Record<string, WordProgress>;
+      ProgressManager.memoryCache = parsedData;
+      ProgressManager.currentUserId = currentUser.userId;
+
+      return ProgressManager.memoryCache;
     } catch (e) {
-      console.error('ProgressManager', '读取进度失败', e);
-      return {};
+      let emptyMap: Record<string, WordProgress> = {};
+      return emptyMap;
     }
   }
 
-  /**
-   * 保存/更新单个单词的进度（自动存入当前登录用户的名下）
-   */
   static async saveWordProgress(context: Context, progress: WordProgress): Promise<void> {
-    // 1. 检查登录状态
     let currentUser = AppStorage.get<UserInfo>('currentUser');
-    if (!currentUser || !currentUser.userId) {
-      console.error('ProgressManager', '未登录，无法保存进度');
-      return;
-    }
+    if (!currentUser || !currentUser.userId) return;
 
-    // 2. 获取数据库实例和当前用户的历史进度
-    let pref = await preferences.getPreferences(context, ProgressManager.PREF_NAME);
     let map = await ProgressManager.getProgressMap(context);
-
-    // 3. 更新该单词的进度
     map[progress.wordId] = progress;
+    ProgressManager.memoryCache = map;
 
-    // 4. 使用同样的专属 Key 存回本地
+    let pref = await preferences.getPreferences(context, ProgressManager.PREF_NAME);
     let userKey = `user_${currentUser.userId}_Progress`;
     await pref.put(userKey, JSON.stringify(map));
-    await pref.flush(); // 强制写入磁盘，确保断电不丢数据
+    await pref.flush();
   }
 
-  // 🌟 新增：定点清除某本词书的所有学习记录
   static async clearBookProgress(context: Context, bookId: string): Promise<void> {
-    // 🌟 修复点 1：把 this 替换为显式的类名 ProgressManager
     let map = await ProgressManager.getProgressMap(context);
-
-    // 🌟 修复点 2：将 any 替换为精确的 WordProgress 类型
     let newMap: Record<string, WordProgress> = {};
 
-    // 过滤保留下“非该词书”的其他进度
-    for (let key of Object.keys(map)) {
+    let keys = Object.keys(map) as string[];
+    for (let i = 0; i < keys.length; i++) {
+      let key = keys[i];
       if (!key.startsWith(`${bookId}_`)) {
         newMap[key] = map[key];
       }
     }
 
-    let pref = await preferences.getPreferences(context, 'WordMemoryDB');
+    ProgressManager.memoryCache = newMap;
 
-    // 🌟 修复点 3：将 any 替换为顶部已经引入的 UserInfo 类型
+    let pref = await preferences.getPreferences(context, ProgressManager.PREF_NAME);
     let currentUser = AppStorage.get<UserInfo>('currentUser');
 
     if (currentUser) {

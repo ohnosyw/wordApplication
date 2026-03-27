@@ -56,6 +56,9 @@ struct LearningSessionPage {
   private currentBookId: string = '';
   private currentBookName: string = '';
 
+  // 🌟 核心防闪退装甲：拦截疯狂连点导致的数组越界与路由崩溃
+  private isClicking: boolean = false;
+
   aboutToAppear() {
     this.loadWords();
   }
@@ -237,7 +240,11 @@ struct LearningSessionPage {
     promptAction.showToast({ message: this.isCurrentWordCollected ? '已加入收藏' : '已取消收藏' });
   }
 
+  // 🌟 连点防御罩开启
   async handleAnswer(isKnown: boolean) {
+    if (this.isClicking) return;
+    this.isClicking = true;
+
     this.previousProgressBackup = {
       wordId: this.currentProgress.wordId,
       repetition: this.currentProgress.repetition,
@@ -276,10 +283,14 @@ struct LearningSessionPage {
     }
     this.isShowDetails = true;
     this.saveSessionToCache();
+
+    this.isClicking = false; // 解锁
   }
 
+  // 🌟 连点防御罩开启
   async markAsWrong() {
-    if (!this.previousProgressBackup) return;
+    if (this.isClicking || !this.previousProgressBackup) return;
+    this.isClicking = true;
 
     let newProgress = Ebbinghaus.calculateNextReview(this.previousProgressBackup, false);
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
@@ -310,15 +321,21 @@ struct LearningSessionPage {
     this.lastAnswerIsKnown = false;
     promptAction.showToast({ message: '已标记为不认识，稍后将重新复习' });
     this.saveSessionToCache();
+
+    this.isClicking = false; // 解锁
   }
 
-  // ------------------ 🌟 核心升级：完本拦截逻辑 ------------------
+  // 🌟 连点防御罩开启
   async nextWord() {
+    if (this.isClicking) return;
+    this.isClicking = true;
+
     if (this.currentIndex < this.wordQueue.length - 1) {
       this.currentIndex += 1;
       this.isShowDetails = false;
       await this.prepareCurrentWord();
       this.saveSessionToCache();
+      this.isClicking = false; // 继续下一个词，解锁
     } else {
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
 
@@ -330,7 +347,6 @@ struct LearningSessionPage {
         let plan = AppStorage.get<PlanData>('studyPlan');
         let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
 
-        // 🌟 完本判定：如果你背完了今天，且总进度满了！
         if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
           await UserManager.recordCompletedBook(getContext(this), plan);
 
@@ -343,10 +359,8 @@ struct LearningSessionPage {
             ]
           }).then(async (data) => {
             if (data.index === 0) {
-              // 选择更换：进度不重置，直接去选新书
               router.replaceUrl({ url: 'pages/BookSelectPage' });
             } else if (data.index === 1) {
-              // 选择重置：清除底层进度，但已完成列表中的荣誉保留
               await ProgressManager.clearBookProgress(getContext(this), this.currentBookId);
               AppStorage.setOrCreate('totalLearnedInBook', 0);
               let user = AppStorage.get<UserInfo>('currentUser');
@@ -354,7 +368,7 @@ struct LearningSessionPage {
                 user.todayStudiedCount = 0;
                 user.todayStudiedNew = 0;
                 user.todayStudiedReview = 0;
-                AppStorage.setOrCreate('currentUser', user);
+                UserManager.syncUserToAppStorage(user);
               }
               promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
               router.back();
@@ -363,13 +377,10 @@ struct LearningSessionPage {
             }
           })
         } else {
-          // 常规的完成当天任务
           promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
           setTimeout(() => { router.back() }, 1500);
         }
-
       } else {
-        // 收藏特训结束逻辑
         let cols = await CollectionManager.getCollections(getContext(this));
         if (cols[this.currentBookId] && cols[this.currentBookId].wordIds.length > 0) {
           let globalWords = cols[this.currentBookId].wordIds;
@@ -381,6 +392,7 @@ struct LearningSessionPage {
         promptAction.showToast({ message: `特训完成！共复习 ${totalLearned} 个收藏词汇`, duration: 2000 });
         setTimeout(() => { router.back() }, 1500);
       }
+      // 注意：到达最后一步退出页面时，不再设置为 false，让按钮彻底锁死防止多点崩溃
     }
   }
 
