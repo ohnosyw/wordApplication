@@ -17,7 +17,7 @@ struct DeleteAccountDialog {
         .height(90)
         .margin({ top: -45, bottom: 10 })
 
-      Text('账号注销确认')
+      Text('⚠ 账号注销确认')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor('#333')
@@ -77,10 +77,21 @@ export struct MineHome {
     alignment: DialogAlignment.Center
   })
 
-  // 辅助函数：判断今天是否学习过
+  // 🌟 核心修复：更严谨地判断今天是否已经学习/打卡过
   private hasCheckedInToday(): boolean {
     if (!this.user) return false;
-    return (this.user.todayStudiedCount !== undefined && this.user.todayStudiedCount > 0);
+    let today = new Date().toDateString();
+
+    // 条件1：如果底层已经记录了今天为打卡日（完成全部任务），鸭子绝对是清醒的
+    if (this.user.lastCheckInDate === today) {
+      return true;
+    }
+    // 条件2：如果今天背了单词，但任务还没彻底完成，鸭子也是清醒的
+    if (this.user.todayStudiedCount !== undefined && this.user.todayStudiedCount > 0) {
+      return true;
+    }
+
+    return false;
   }
 
   // 执行注销逻辑
@@ -129,6 +140,7 @@ export struct MineHome {
             Row() {
               Image(this.hasCheckedInToday() ? $r('app.media.ic_duck_active') : $r('app.media.ic_duck_sleep'))
                 .width(30).height(30).margin({ right: 10 })
+                .animation({ duration: 400, curve: Curve.EaseInOut }) // 加入过渡动画
 
               Text('连续打卡').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
               Blank()
@@ -169,7 +181,6 @@ export struct MineHome {
               .fontSize(16).fontWeight(FontWeight.Medium).margin({ bottom: 20 }).borderRadius(12)
               .onClick(async () => { await UserManager.logout(getContext(this)); })
 
-            // 🌟 3. 修改注销按钮的点击事件，调用自定义弹窗
             Text('注销账号')
               .fontSize(14).fontColor('#BDBDBD').decoration({ type: TextDecorationType.Underline }).margin({ bottom: 40 })
               .onClick(() => {
