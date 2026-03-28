@@ -3,15 +3,92 @@ import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { UserInfo, UserManager } from '../utils/UserManager';
 
+// 🌟 1. 自定义注销账号弹窗 (保持与主页重置弹窗风格 100% 一致)
+@CustomDialog
+struct DeleteAccountDialog {
+  controller: CustomDialogController
+  onConfirm: () => void = () => {}
+
+  build() {
+    Column() {
+      // 顶部的鸭子图标
+      Image($r('app.media.ic_duck_sleep')) // 使用睡觉或忧伤的鸭子
+        .width(90)
+        .height(90)
+        .margin({ top: -45, bottom: 10 })
+
+      Text('账号注销确认')
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#333')
+        .margin({ bottom: 12 })
+
+      Text('注销后，您的所有学习进度和数据将被永久删除且无法恢复。你真的要离开鸭鸭吗？')
+        .fontSize(14)
+        .fontColor('#666')
+        .textAlign(TextAlign.Center)
+        .lineHeight(20)
+        .padding({ left: 10, right: 10 })
+        .margin({ bottom: 25 })
+
+      Button('确认永久注销')
+        .width('100%')
+        .height(45)
+        .backgroundColor('#F7F7F7')
+        .fontColor('#F44336') // 红色文字提醒危险
+        .border({ width: 1, color: '#F44336' })
+        .margin({ bottom: 12 })
+        .onClick(() => {
+          this.onConfirm()
+          this.controller.close()
+        })
+
+      Button('手滑了，留下来')
+        .width('100%')
+        .height(45)
+        .backgroundColor('#FFCA28')
+        .fontColor('#333')
+        .onClick(() => {
+          this.controller.close()
+        })
+    }
+    .width('85%')
+    .padding(20)
+    .borderRadius(20)
+    .linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
+    })
+    .shadow({ radius: 20, color: '#33000000' })
+  }
+}
+
 @Component
 export struct MineHome {
   @StorageLink('currentUser') user: UserInfo | null = null;
 
-  // 🌟 辅助函数：判断今天是否已经开始学习（即打卡）
+  // 🌟 2. 定义注销弹窗控制器
+  deleteAccountDialogController: CustomDialogController = new CustomDialogController({
+    builder: DeleteAccountDialog({
+      onConfirm: () => { this.handleDeleteAccount() }
+    }),
+    autoCancel: true,
+    customStyle: true,
+    alignment: DialogAlignment.Center
+  })
+
+  // 辅助函数：判断今天是否学习过
   private hasCheckedInToday(): boolean {
     if (!this.user) return false;
-    // 逻辑：只要今日学习量大于 0，鸭子就会醒来
     return (this.user.todayStudiedCount !== undefined && this.user.todayStudiedCount > 0);
+  }
+
+  // 执行注销逻辑
+  async handleDeleteAccount() {
+    let success = await UserManager.deleteAccount(getContext(this));
+    if (success) {
+      promptAction.showToast({ message: '账号已永久注销' });
+    }
   }
 
   aboutToAppear() {
@@ -47,30 +124,18 @@ export struct MineHome {
         .onClick(() => { if (!this.user) router.pushUrl({ url: 'pages/LoginPage' }); })
 
         if (this.user) {
-          // --- 2. 连续打卡卡片 (形态进化鸭子) ---
+          // --- 2. 连续打卡卡片 ---
           Column() {
             Row() {
-              // 🌟 核心修改：根据打卡状态动态切换鸭子图片
               Image(this.hasCheckedInToday() ? $r('app.media.ic_duck_active') : $r('app.media.ic_duck_sleep'))
-                .width(30)
-                .height(30)
-                .margin({ right: 10 })
-                .animation({ duration: 400, curve: Curve.EaseInOut })
+                .width(30).height(30).margin({ right: 10 })
 
-              Text('连续打卡')
-                .fontSize(16)
-                .fontWeight(FontWeight.Bold)
-                .fontColor('#333')
-
+              Text('连续打卡').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
               Blank()
-
-              // 右上角状态小标签
               Text(this.hasCheckedInToday() ? '今日已达标' : '今日待叫醒')
-                .fontSize(11)
-                .fontColor(this.hasCheckedInToday() ? '#FF9800' : '#999')
+                .fontSize(11).fontColor(this.hasCheckedInToday() ? '#FF9800' : '#999')
                 .backgroundColor(this.hasCheckedInToday() ? '#FFF8E1' : '#EAEAEA')
-                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                .borderRadius(6)
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(6)
             }.width('100%').margin({ bottom: 12 }).alignItems(VerticalAlign.Center)
 
             Row() {
@@ -79,64 +144,36 @@ export struct MineHome {
               Text(' 天').fontSize(16).fontColor('#666').margin({ bottom: 8, left: 4 })
             }.alignItems(VerticalAlign.Bottom).width('100%')
 
-            // 根据状态切换互动文案
             Text(this.hasCheckedInToday() ?
-              '太棒了！今天也准时把鸭鸭叫醒完成任务了！' :
-              '鸭鸭还在梦游，快去背几个单词把它叫醒')
+              '太棒了！今天也准时把鸭鸭叫醒完成任务了鸭！' :
+              '鸭鸭还在梦游，快去背几个单词把它叫醒鸭！')
               .fontSize(12).fontColor('#999').margin({ top: 10 }).width('100%')
           }
-          .width('90%')
-          .padding(20)
-          .backgroundColor('#F7F7F7')
-          .borderRadius(15)
-          .margin({ top: 10, bottom: 20 })
+          .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15).margin({ top: 10, bottom: 20 })
           .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
           // --- 3. 功能列表 ---
           List() {
-            ListItem() {
-              this.MenuItem("已完成词书", `${this.user.completedBooks ? this.user.completedBooks.length : 0} 本`)
-            }.onClick(() => { router.pushUrl({ url: 'pages/CompletedBooksPage' }) })
-
-            ListItem() {
-              this.MenuItem("我的收藏", "去复习")
-            }.onClick(() => { router.pushUrl({ url: 'pages/CollectionsPage' }) })
+            ListItem() { this.MenuItem("已完成词书", `${this.user.completedBooks ? this.user.completedBooks.length : 0} 本`) }
+            .onClick(() => { router.pushUrl({ url: 'pages/CompletedBooksPage' }) })
+            ListItem() { this.MenuItem("我的收藏", "去复习") }
+            .onClick(() => { router.pushUrl({ url: 'pages/CollectionsPage' }) })
           }
-          .backgroundColor('#F7F7F7')
-          .width('90%')
-          .margin({ bottom: 30 })
-          .borderRadius(15)
+          .backgroundColor('#F7F7F7').width('90%').margin({ bottom: 30 }).borderRadius(15)
           .divider({ strokeWidth: 1, color: '#EEEEEE', startMargin: 15, endMargin: 15 })
 
           // --- 4. 退出与注销 ---
           Column() {
             Button('退出登录')
-              .width('90%')
-              .height(50)
-              .backgroundColor('#FFF8E1')
-              .fontColor('#FF9800')
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .margin({ bottom: 20 })
-              .borderRadius(12)
+              .width('90%').height(50).backgroundColor('#FFF8E1').fontColor('#FF9800')
+              .fontSize(16).fontWeight(FontWeight.Medium).margin({ bottom: 20 }).borderRadius(12)
               .onClick(async () => { await UserManager.logout(getContext(this)); })
 
+            // 🌟 3. 修改注销按钮的点击事件，调用自定义弹窗
             Text('注销账号')
-              .fontSize(14)
-              .fontColor('#BDBDBD')
-              .decoration({ type: TextDecorationType.Underline })
-              .margin({ bottom: 40 })
+              .fontSize(14).fontColor('#BDBDBD').decoration({ type: TextDecorationType.Underline }).margin({ bottom: 40 })
               .onClick(() => {
-                promptAction.showDialog({
-                  title: '⚠ 危险操作',
-                  message: '注销后，您的所有学习进度和数据将被永久删除。确定要注销吗？',
-                  buttons: [{ text: '手滑了', color: '#4CAF50' }, { text: '确认永久注销', color: '#F44336' }]
-                }).then(async (data) => {
-                  if (data.index === 1) {
-                    let success = await UserManager.deleteAccount(getContext(this));
-                    if (success) promptAction.showToast({ message: '账号已永久注销' });
-                  }
-                })
+                this.deleteAccountDialogController.open()
               })
           }.width('100%')
         }
@@ -145,11 +182,7 @@ export struct MineHome {
     .width('100%').height('100%')
     .linearGradient({
       direction: GradientDirection.Bottom,
-      colors: [
-        ['#FFFDE7', 0.0],
-        ['#FFF9C4', 0.3],
-        ['#F5F5F5', 1.0]
-      ]
+      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 0.3], ['#F5F5F5', 1.0]]
     })
   }
 
