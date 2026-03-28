@@ -3,7 +3,7 @@ import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { UserInfo, UserManager } from '../utils/UserManager';
 
-// 🌟 1. 自定义注销账号弹窗 (保持与主页重置弹窗风格 100% 一致)
+// 1. 自定义注销账号弹窗
 @CustomDialog
 struct DeleteAccountDialog {
   controller: CustomDialogController
@@ -11,54 +11,30 @@ struct DeleteAccountDialog {
 
   build() {
     Column() {
-      // 顶部的鸭子图标
-      Image($r('app.media.ic_duck_sleep')) // 使用睡觉或忧伤的鸭子
-        .width(90)
-        .height(90)
-        .margin({ top: -45, bottom: 10 })
+      Image($r('app.media.ic_duck_sleep'))
+        .width(90).height(90).margin({ top: -45, bottom: 10 })
 
-      Text('⚠ 账号注销确认')
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#333')
-        .margin({ bottom: 12 })
+      Text('账号注销确认')
+        .fontSize(22).fontWeight(FontWeight.Bold).fontColor('#333').margin({ bottom: 12 })
 
       Text('注销后，您的所有学习进度和数据将被永久删除且无法恢复。你真的要离开鸭鸭吗？')
-        .fontSize(14)
-        .fontColor('#666')
-        .textAlign(TextAlign.Center)
-        .lineHeight(20)
-        .padding({ left: 10, right: 10 })
-        .margin({ bottom: 25 })
+        .fontSize(14).fontColor('#666').textAlign(TextAlign.Center).lineHeight(20)
+        .padding({ left: 10, right: 10 }).margin({ bottom: 25 })
 
       Button('确认永久注销')
-        .width('100%')
-        .height(45)
-        .backgroundColor('#F7F7F7')
-        .fontColor('#F44336') // 红色文字提醒危险
-        .border({ width: 1, color: '#F44336' })
-        .margin({ bottom: 12 })
+        .width('100%').height(45).backgroundColor('#F7F7F7').fontColor('#F44336')
+        .border({ width: 1, color: '#F44336' }).margin({ bottom: 12 })
         .onClick(() => {
           this.onConfirm()
           this.controller.close()
         })
 
       Button('手滑了，留下来')
-        .width('100%')
-        .height(45)
-        .backgroundColor('#FFCA28')
-        .fontColor('#333')
-        .onClick(() => {
-          this.controller.close()
-        })
+        .width('100%').height(45).backgroundColor('#FFCA28').fontColor('#333')
+        .onClick(() => { this.controller.close() })
     }
-    .width('85%')
-    .padding(20)
-    .borderRadius(20)
-    .linearGradient({
-      direction: GradientDirection.Bottom,
-      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
-    })
+    .width('85%').padding(20).borderRadius(20)
+    .linearGradient({ direction: GradientDirection.Bottom, colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]] })
     .shadow({ radius: 20, color: '#33000000' })
   }
 }
@@ -67,7 +43,6 @@ struct DeleteAccountDialog {
 export struct MineHome {
   @StorageLink('currentUser') user: UserInfo | null = null;
 
-  // 🌟 2. 定义注销弹窗控制器
   deleteAccountDialogController: CustomDialogController = new CustomDialogController({
     builder: DeleteAccountDialog({
       onConfirm: () => { this.handleDeleteAccount() }
@@ -77,24 +52,23 @@ export struct MineHome {
     alignment: DialogAlignment.Center
   })
 
-  // 🌟 核心修复：更严谨地判断今天是否已经学习/打卡过
-  private hasCheckedInToday(): boolean {
-    if (!this.user) return false;
+  // 🌟 核心修复：更严谨的三段式状态判断
+  private getTodayStatus(): 'unstarted' | 'learning' | 'completed' {
+    if (!this.user) return 'unstarted';
     let today = new Date().toDateString();
 
-    // 条件1：如果底层已经记录了今天为打卡日（完成全部任务），鸭子绝对是清醒的
+    // 只有底层记录了打卡日期（点击了完成任务），才算真正 completed，此时打卡天数才加了，鸭子才会醒
     if (this.user.lastCheckInDate === today) {
-      return true;
+      return 'completed';
     }
-    // 条件2：如果今天背了单词，但任务还没彻底完成，鸭子也是清醒的
+    // 如果今天背了单词，但是没点“完成任务”，属于 learning 状态，鸭子依然在睡觉
     if (this.user.todayStudiedCount !== undefined && this.user.todayStudiedCount > 0) {
-      return true;
+      return 'learning';
     }
 
-    return false;
+    return 'unstarted';
   }
 
-  // 执行注销逻辑
   async handleDeleteAccount() {
     let success = await UserManager.deleteAccount(getContext(this));
     if (success) {
@@ -112,10 +86,7 @@ export struct MineHome {
         // --- 1. 用户基本信息栏 ---
         Row() {
           Image($r('app.media.user_avatar'))
-            .width(70)
-            .height(70)
-            .borderRadius(35)
-            .backgroundColor('#E0E0E0')
+            .width(70).height(70).borderRadius(35).backgroundColor('#E0E0E0')
             .border({ width: 2, color: '#FFF' })
 
           Column() {
@@ -138,15 +109,19 @@ export struct MineHome {
           // --- 2. 连续打卡卡片 ---
           Column() {
             Row() {
-              Image(this.hasCheckedInToday() ? $r('app.media.ic_duck_active') : $r('app.media.ic_duck_sleep'))
+              // 🌟 只有真正 completed 时，鸭子才会换成 active！
+              Image(this.getTodayStatus() === 'completed' ? $r('app.media.ic_duck_active') : $r('app.media.ic_duck_sleep'))
                 .width(30).height(30).margin({ right: 10 })
-                .animation({ duration: 400, curve: Curve.EaseInOut }) // 加入过渡动画
+                .animation({ duration: 400, curve: Curve.EaseInOut })
 
               Text('连续打卡').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
               Blank()
-              Text(this.hasCheckedInToday() ? '今日已达标' : '今日待叫醒')
-                .fontSize(11).fontColor(this.hasCheckedInToday() ? '#FF9800' : '#999')
-                .backgroundColor(this.hasCheckedInToday() ? '#FFF8E1' : '#EAEAEA')
+
+              // 🌟 动态状态标签
+              Text(this.getTodayStatus() === 'completed' ? '今日已达标' : (this.getTodayStatus() === 'learning' ? '今日待完成' : '今日待叫醒'))
+                .fontSize(11)
+                .fontColor(this.getTodayStatus() === 'completed' ? '#FF9800' : (this.getTodayStatus() === 'learning' ? '#2196F3' : '#999'))
+                .backgroundColor(this.getTodayStatus() === 'completed' ? '#FFF8E1' : (this.getTodayStatus() === 'learning' ? '#E3F2FD' : '#EAEAEA'))
                 .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(6)
             }.width('100%').margin({ bottom: 12 }).alignItems(VerticalAlign.Center)
 
@@ -156,9 +131,11 @@ export struct MineHome {
               Text(' 天').fontSize(16).fontColor('#666').margin({ bottom: 8, left: 4 })
             }.alignItems(VerticalAlign.Bottom).width('100%')
 
-            Text(this.hasCheckedInToday() ?
-              '太棒了！今天也准时把鸭鸭叫醒完成任务了鸭！' :
-              '鸭鸭还在梦游，快去背几个单词把它叫醒鸭！')
+            // 🌟 更细腻的情感互动文案
+            Text(
+              this.getTodayStatus() === 'completed' ? '太棒了！今天也准时把鸭鸭叫醒完成任务了鸭！' :
+                (this.getTodayStatus() === 'learning' ? '鸭鸭还在梦里，快去点下最后一步打卡把它叫醒吧！' : '鸭鸭还在梦游，快去背几个单词把它叫醒鸭！')
+            )
               .fontSize(12).fontColor('#999').margin({ top: 10 }).width('100%')
           }
           .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15).margin({ top: 10, bottom: 20 })

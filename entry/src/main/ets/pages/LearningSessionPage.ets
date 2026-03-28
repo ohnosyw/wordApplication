@@ -44,7 +44,7 @@ struct CompletionDialog {
       Image($r('app.media.ic_duck'))
         .width(80)
         .height(80)
-        .margin({ top: -40, bottom: 10 }) // 向上偏移，制造破框而出的视觉感
+        .margin({ top: -40, bottom: 10 })
 
       Text('🎉 恭喜完本！')
         .fontSize(22)
@@ -318,7 +318,6 @@ struct LearningSessionPage {
     if (this.isClicking) return;
     this.isClicking = true;
 
-    // 🌟 核心修复点：禁止使用 { ...obj }，改为手动创建对象
     this.previousProgressBackup = {
       wordId: this.currentProgress.wordId,
       repetition: this.currentProgress.repetition,
@@ -433,9 +432,7 @@ struct LearningSessionPage {
         let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
 
         if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
-          // 🌟 核心修复点：在弹出完本对话框之前，立刻调用底层接口将该书打上“已完成”的烙印！
           await UserManager.recordCompletedBook(getContext(this), plan);
-
           this.completionDialogController.open();
         } else {
           promptAction.showToast({ message: `今日任务已完成！本次掌握 ${totalLearned} 词`, duration: 2000 });
@@ -507,10 +504,14 @@ struct LearningSessionPage {
                 if (this.wordQueue[this.currentIndex].content.word.content.trans) {
                   Column() {
                     ForEach(this.wordQueue[this.currentIndex].content.word.content.trans || [], (tran: TransItem) => {
+                      // 🌟 核心修复：防止释义长文本溢出屏幕
                       Row() {
                         Text(tran.pos + ".").fontSize(16).fontColor('#FF9800').fontWeight(FontWeight.Bold).margin({ right: 8 });
-                        Text(tran.tranCn).fontSize(16).fontColor('#333')
-                      }.width('100%').margin({ bottom: 5 })
+                        Text(tran.tranCn)
+                          .fontSize(16)
+                          .fontColor('#333')
+                          .layoutWeight(1) // 限制宽度自动换行
+                      }.width('100%').margin({ bottom: 5 }).alignItems(VerticalAlign.Top) // 顶部对齐，换行后更美观
                     })
                   }.padding(15).backgroundColor('#EAEAEA').borderRadius(10).width('100%').margin({ top: 30 })
                 }
