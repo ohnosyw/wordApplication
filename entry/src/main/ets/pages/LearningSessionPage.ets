@@ -31,7 +31,7 @@ interface DailyQueueData {
   sessionTotalReview: number;
 }
 
-// 自定义完成词书弹窗 (与主页风格保持 100% 一致)
+// 自定义完成词书弹窗 (保持主页风格)
 @CustomDialog
 struct CompletionDialog {
   controller: CustomDialogController
@@ -46,7 +46,7 @@ struct CompletionDialog {
         .height(80)
         .margin({ top: -40, bottom: 10 }) // 向上偏移，制造破框而出的视觉感
 
-      Text('恭喜完成该词书！')
+      Text('🎉 恭喜完本！')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor('#333')
@@ -121,8 +121,18 @@ struct LearningSessionPage {
   private currentBookId: string = '';
   private currentBookName: string = '';
 
-  // 🌟 核心防闪退装甲：拦截疯狂连点导致的数组越界与路由崩溃
   private isClicking: boolean = false;
+
+  // 弹窗控制器
+  completionDialogController: CustomDialogController = new CustomDialogController({
+    builder: CompletionDialog({
+      bookName: this.currentBookName,
+      onConfirm: (index: number) => { this.handleCompletionSelection(index) }
+    }),
+    autoCancel: false,
+    customStyle: true,
+    alignment: DialogAlignment.Center
+  })
 
   aboutToAppear() {
     this.loadWords();
@@ -200,7 +210,6 @@ struct LearningSessionPage {
         this.wordQueue = finalQueue;
         this.sessionTotalReview = this.wordQueue.length;
       }
-
     } else {
       let plan = AppStorage.get<PlanData>('studyPlan');
       if (!plan) { promptAction.showToast({ message: '计划异常' }); router.back(); return; }
@@ -305,18 +314,19 @@ struct LearningSessionPage {
     promptAction.showToast({ message: this.isCurrentWordCollected ? '已加入收藏' : '已取消收藏' });
   }
 
-  // 🌟 连点防御罩开启
   async handleAnswer(isKnown: boolean) {
     if (this.isClicking) return;
     this.isClicking = true;
 
+    // 🌟 核心修复点：禁止使用 { ...obj }，改为手动创建对象
     this.previousProgressBackup = {
       wordId: this.currentProgress.wordId,
       repetition: this.currentProgress.repetition,
       interval: this.currentProgress.interval,
       efactor: this.currentProgress.efactor,
       nextReviewDate: this.currentProgress.nextReviewDate
-    } as WordProgress;
+    };
+
     this.lastAnswerIsKnown = isKnown;
 
     let newProgress = Ebbinghaus.calculateNextReview(this.currentProgress, isKnown);
@@ -333,7 +343,6 @@ struct LearningSessionPage {
         if (this.initialNewWordIds.includes(rawId)) {
           this.sessionFinishedNew++;
           await UserManager.updateUserStats(getContext(this), 1, 0);
-
           let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
           AppStorage.setOrCreate('totalLearnedInBook', currentTotal + 1);
         } else {
@@ -348,15 +357,12 @@ struct LearningSessionPage {
     }
     this.isShowDetails = true;
     this.saveSessionToCache();
-
-    this.isClicking = false; // 解锁
+    this.isClicking = false;
   }
 
-  // 🌟 连点防御罩开启
   async markAsWrong() {
     if (this.isClicking || !this.previousProgressBackup) return;
     this.isClicking = true;
-
     let newProgress = Ebbinghaus.calculateNextReview(this.previousProgressBackup, false);
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
     this.currentProgress = newProgress;
@@ -372,7 +378,6 @@ struct LearningSessionPage {
         if (this.initialNewWordIds.includes(rawId)) {
           this.sessionFinishedNew--;
           await UserManager.updateUserStats(getContext(this), -1, 0);
-
           let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
           AppStorage.setOrCreate('totalLearnedInBook', Math.max(0, currentTotal - 1));
         } else {
@@ -384,24 +389,11 @@ struct LearningSessionPage {
 
     this.wordQueue.push(this.wordQueue[this.currentIndex]);
     this.lastAnswerIsKnown = false;
-    promptAction.showToast({ message: '已标记为不认识，稍后将重新复习' });
+    promptAction.showToast({ message: '已标记为不认识' });
     this.saveSessionToCache();
-
-    this.isClicking = false; // 解锁
+    this.isClicking = false;
   }
 
-  // 🌟 新增：定义弹窗控制器
-  completionDialogController: CustomDialogController = new CustomDialogController({
-    builder: CompletionDialog({
-      bookName: this.currentBookName,
-      onConfirm: (index: number) => { this.handleCompletionSelection(index) }
-    }),
-    autoCancel: false,
-    customStyle: true,
-    alignment: DialogAlignment.Center
-  })
-
-  // 🌟 新增：处理弹窗选择的逻辑
   async handleCompletionSelection(index: number) {
     if (index === 0) {
       router.replaceUrl({ url: 'pages/BookSelectPage' });
@@ -420,7 +412,6 @@ struct LearningSessionPage {
     }
   }
 
-  // 🌟 连点防御罩开启
   async nextWord() {
     if (this.isClicking) return;
     this.isClicking = true;
@@ -430,22 +421,20 @@ struct LearningSessionPage {
       this.isShowDetails = false;
       await this.prepareCurrentWord();
       this.saveSessionToCache();
-      this.isClicking = false; // 继续下一个词，解锁
+      this.isClicking = false;
     } else {
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
-
       if (!this.isCollectionMode) {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.clearDailyQueue(getContext(this), this.currentBookId, new Date().toDateString());
         await UserManager.recordCheckIn(getContext(this));
-
         let plan = AppStorage.get<PlanData>('studyPlan');
         let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
 
         if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
           this.completionDialogController.open();
         } else {
-          promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
+          promptAction.showToast({ message: `今日任务已完成！本次掌握 ${totalLearned} 词`, duration: 2000 });
           setTimeout(() => { router.back() }, 1500);
         }
       } else {
@@ -457,60 +446,55 @@ struct LearningSessionPage {
           let nextIdx = (idx + 1) % globalWords.length;
           await CollectionManager.setLastWordId(getContext(this), this.currentBookId, globalWords[nextIdx]);
         }
-        promptAction.showToast({ message: `特训完成！共复习 ${totalLearned} 个收藏词汇`, duration: 2000 });
+        promptAction.showToast({ message: `特训完成！复习 ${totalLearned} 词`, duration: 2000 });
         setTimeout(() => { router.back() }, 1500);
       }
-      // 注意：到达最后一步退出页面时，不再设置为 false，让按钮彻底锁死防止多点崩溃
     }
   }
 
   build() {
     Column() {
+      // 1. 顶部栏
       Row() {
-        Image($r('app.media.ic_back')).width(24).height(24).onClick(() => {
-          this.saveSessionToCache();
-          router.back();
-        })
+        Image($r('app.media.ic_back'))
+          .width(24).height(24)
+          .onClick(() => { this.saveSessionToCache(); router.back(); })
         Blank()
         if (!this.isLoading && this.wordQueue.length > 0) {
           Row() {
             if (this.isCollectionMode) {
               Text(`特训 ${this.sessionFinishedReview}/${this.sessionTotalReview}`).fontSize(14).fontColor('#FF9800')
             } else {
-              Text(`新词 ${this.sessionFinishedNew}/${this.sessionTotalNew}`).fontSize(14).fontColor('#F44336').margin({ right: 15 })
-              Text(`复习 ${this.sessionFinishedReview}/${this.sessionTotalReview}`).fontSize(14).fontColor('#2196F3')
+              Text(`新词 ${this.sessionFinishedNew}/${this.sessionTotalNew}`).fontSize(14).fontColor('#FF9800').margin({ right: 15 })
+              Text(`复习 ${this.sessionFinishedReview}/${this.sessionTotalReview}`).fontSize(14).fontColor('#FFCA28')
             }
           }
         }
       }.width('100%').padding(16)
 
       if (this.isLoading) {
-        Column() { LoadingProgress().width(50).height(50).color('#4CAF50'); Text('正在准备数据...').fontSize(16).fontColor('#666').margin({ top: 20 }) }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
+        Column() { LoadingProgress().width(50).height(50).color('#FFCA28'); Text('正在准备数据...').fontSize(16).fontColor('#666').margin({ top: 20 }) }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else if (this.wordQueue.length > 0) {
+        // 2. 核心卡片容器
         Column() {
           Row() {
             if (!this.isCollectionMode) {
               Text(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '新词' : '复习')
-                .fontSize(12).fontColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#F44336' : '#2196F3')
-                .backgroundColor(this.initialNewWordIds.includes(this.wordQueue[this.currentIndex].content.word.wordId) ? '#FFEBEE' : '#E3F2FD')
-                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+                .fontSize(12).fontColor('#FF9800').backgroundColor('#FFF8E1')
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(6)
             } else {
-              Text('收藏复习')
-                .fontSize(12).fontColor('#FF9800').backgroundColor('#FFF3E0')
-                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(10)
+              Text('收藏复习').fontSize(12).fontColor('#FFCA28').backgroundColor('#FFF8E1')
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 }).borderRadius(6)
             }
-
             Blank()
-
             Text(this.isCurrentWordCollected ? '★' : '☆')
-              .fontSize(28).fontColor(this.isCurrentWordCollected ? '#4CAF50' : '#CCCCCC')
+              .fontSize(28).fontColor('#FFCA28')
               .onClick(() => { this.toggleStar() })
-
           }.width('100%').alignItems(VerticalAlign.Center)
 
           Text(this.wordQueue[this.currentIndex].headWord).fontSize(40).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 10 })
           if (this.wordQueue[this.currentIndex].content.word.content.usphone) {
-            Text(`美 [${this.wordQueue[this.currentIndex].content.word.content.usphone!}]`).fontSize(16).fontColor('#666').margin({ top: 10 })
+            Text(`美 [${this.wordQueue[this.currentIndex].content.word.content.usphone!}]`).fontSize(16).fontColor('#999').margin({ top: 10 })
           }
 
           if (!this.isShowDetails) { Blank() } else {
@@ -519,45 +503,51 @@ struct LearningSessionPage {
                 if (this.wordQueue[this.currentIndex].content.word.content.trans) {
                   Column() {
                     ForEach(this.wordQueue[this.currentIndex].content.word.content.trans || [], (tran: TransItem) => {
-                      Row() { Text(tran.pos + ".").fontSize(16).fontColor('#4CAF50').fontWeight(FontWeight.Bold).margin({ right: 8 }); Text(tran.tranCn).fontSize(16).fontColor('#333') }.width('100%').margin({ bottom: 5 })
+                      Row() {
+                        Text(tran.pos + ".").fontSize(16).fontColor('#FF9800').fontWeight(FontWeight.Bold).margin({ right: 8 });
+                        Text(tran.tranCn).fontSize(16).fontColor('#333')
+                      }.width('100%').margin({ bottom: 5 })
                     })
-                  }.padding(15).backgroundColor('#F5F5F5').borderRadius(10).width('100%').margin({ top: 30 })
+                  }.padding(15).backgroundColor('#EAEAEA').borderRadius(10).width('100%').margin({ top: 30 })
                 }
                 if (this.wordQueue[this.currentIndex].content.word.content.sentence) {
                   Column() {
                     Text('语境例句').fontSize(14).fontColor('#999').width('100%').margin({ bottom: 10 })
                     ForEach(this.wordQueue[this.currentIndex].content.word.content.sentence?.sentences || [], (sen: SentenceItem) => {
-                      Column() { Text(sen.sContent).fontSize(16).fontColor('#333').fontWeight(FontWeight.Medium).width('100%').margin({ bottom: 5 }); Text(sen.sCn).fontSize(14).fontColor('#666').width('100%') }.margin({ bottom: 15 })
+                      Column() {
+                        Text(sen.sContent).fontSize(16).fontColor('#333').fontWeight(FontWeight.Medium).width('100%').margin({ bottom: 5 });
+                        Text(sen.sCn).fontSize(14).fontColor('#999').width('100%')
+                      }.margin({ bottom: 15 })
                     })
                   }.padding(15).width('100%').margin({ top: 20 })
                 }
               }.width('100%').alignItems(HorizontalAlign.Start)
             }.layoutWeight(1).margin({ top: 20 })
           }
-        }.width('90%').layoutWeight(1).backgroundColor(Color.White).borderRadius(20).padding(20).shadow({ radius: 10, color: '#1A000000', offsetX: 0, offsetY: 5 }).margin({ top: 10, bottom: 20 })
+        }
+        .width('90%').layoutWeight(1).backgroundColor('#F7F7F7').borderRadius(20).padding(20)
+        .shadow({ radius: 15, color: '#1A000000', offsetX: 0, offsetY: 8 }).margin({ top: 10, bottom: 20 })
 
+        // 3. 底部按钮组
         Row() {
           if (!this.isShowDetails) {
-            Button('不认识').width('45%').height(50).backgroundColor('#FFF3E0').fontColor('#FF9800').fontSize(18).onClick(() => { this.handleAnswer(false) })
-            Button('认识').width('45%').height(50).backgroundColor('#E8F5E9').fontColor('#4CAF50').fontSize(18).onClick(() => { this.handleAnswer(true) })
+            Button('不认识').width('45%').height(50).backgroundColor('#FFF8E1').fontColor('#FF9800').fontSize(18).onClick(() => { this.handleAnswer(false) })
+            Button('认识').width('45%').height(50).backgroundColor('#FFCA28').fontColor('#333').fontSize(18).onClick(() => { this.handleAnswer(true) })
           } else {
             if (this.lastAnswerIsKnown) {
-              Button('记错了')
-                .width('40%').height(50).backgroundColor('#FFEBEE').fontColor('#F44336').fontSize(18)
-                .onClick(() => { this.markAsWrong() })
-              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
-                .width('55%').height(50).backgroundColor('#4CAF50').fontSize(18)
-                .onClick(() => { this.nextWord() })
+              Button('记错了').width('40%').height(50).backgroundColor('#F7F7F7').fontColor('#FF9800').border({width:1, color:'#FFCA28'}).fontSize(18).onClick(() => { this.markAsWrong() })
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务' : '下一个').width('55%').height(50).backgroundColor('#FFCA28').fontColor('#333').fontSize(18).onClick(() => { this.nextWord() })
             } else {
-              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务 🎉' : '下一个')
-                .width('100%').height(50).backgroundColor('#4CAF50').fontSize(18)
-                .onClick(() => { this.nextWord() })
+              Button(this.currentIndex === this.wordQueue.length - 1 ? '完成任务' : '下一个').width('100%').height(50).backgroundColor('#FFCA28').fontColor('#333').fontSize(18).onClick(() => { this.nextWord() })
             }
           }
         }.width('90%').justifyContent(FlexAlign.SpaceBetween).margin({ bottom: 30 })
-      } else {
-        Text('暂无学习任务').margin({ top: 100 })
       }
-    }.width('100%').height('100%').backgroundColor('#F5F5F5')
+    }
+    .width('100%').height('100%')
+    .linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 0.3], ['#F5F5F5', 1.0]]
+    })
   }
 }
