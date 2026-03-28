@@ -72,6 +72,67 @@ struct CompletionDialog {
   }
 }
 
+// 🌟 新增：自定义加练弹窗
+@CustomDialog
+struct ExtraStudyDialog {
+  controller: CustomDialogController
+  onConfirm: () => void = () => {}
+
+  build() {
+    Column() {
+      // 同样的鸭子图标偏移设计
+      Image($r('app.media.ic_duck'))
+        .width(80)
+        .height(80)
+        .margin({ top: -40, bottom: 10 })
+
+      Text('今日任务已完成')
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#333')
+        .margin({ bottom: 15 })
+
+      Text('您已完成今天的专属背词任务！\n是否要开启额外加练？')
+        .fontSize(14)
+        .fontColor('#666')
+        .textAlign(TextAlign.Center)
+        .lineHeight(20)
+        .padding({ left: 20, right: 20 })
+        .margin({ bottom: 25 })
+
+      Button('继续加练')
+        .width('90%')
+        .height(45)
+        .backgroundColor('#FFCA28')
+        .fontColor('#333')
+        .margin({ bottom: 12 })
+        .onClick(() => {
+          this.onConfirm()
+          this.controller.close()
+        })
+
+      Button('休息一下')
+        .width('90%')
+        .height(45)
+        .backgroundColor('#F7F7F7')
+        .fontColor('#999')
+        .border({ width: 1, color: '#DDD' })
+        .margin({ bottom: 20 })
+        .onClick(() => {
+          this.controller.close()
+        })
+    }
+    .width('90%')
+    .padding(20)
+    .borderRadius(20)
+    .linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
+    })
+    .shadow({ radius: 20, color: '#33000000' })
+  }
+}
+
 @Component
 export struct WordHome {
   @StorageLink('currentUser') user: UserInfo | null = null;
@@ -120,6 +181,24 @@ export struct WordHome {
     autoCancel: false,
     customStyle: true // 使用自定义样式，去掉白边
   })
+
+  // 🌟 修改：在原有控制器下方增加加练控制器
+  private extraStudyDialogController: CustomDialogController | null = new CustomDialogController({
+    builder: ExtraStudyDialog({
+      onConfirm: () => { this.handleExtraStudy() }
+    }),
+    autoCancel: true,
+    customStyle: true
+  })
+
+  // 🌟 新增：处理加练的逻辑函数
+  async handleExtraStudy() {
+    if (this.plan) {
+      let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan);
+      await UserManager.addExtraTarget(getContext(this), this.plan, taskInfo.availableNew, taskInfo.availableReview);
+      router.pushUrl({ url: 'pages/LearningSessionPage' })
+    }
+  }
 
   private lastSeenPlanStr: string = '';
 
@@ -321,20 +400,8 @@ export struct WordHome {
               let target = this.user!.todayTarget !== undefined ? this.user!.todayTarget : 0;
 
               if (studied >= target && target > 0) {
-                promptAction.showDialog({
-                  title: '🎉 今日任务已完成',
-                  message: '您已完成今天的专属背词任务！是否要开启额外加练？',
-                  buttons: [
-                    { text: '休息一下', color: '#999' },
-                    { text: '继续加练', color: '#FFCA28' }
-                  ]
-                }).then(async (data) => {
-                  if (data.index === 1) {
-                    let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
-                    await UserManager.addExtraTarget(getContext(this), this.plan!, taskInfo.availableNew, taskInfo.availableReview);
-                    router.pushUrl({ url: 'pages/LearningSessionPage' })
-                  }
-                })
+                // 🌟 修改这里：不再使用 promptAction，改为打开自定义弹窗
+                this.extraStudyDialogController?.open()
               } else {
                 router.pushUrl({ url: 'pages/LearningSessionPage' })
               }
