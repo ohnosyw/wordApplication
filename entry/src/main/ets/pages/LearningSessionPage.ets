@@ -428,10 +428,14 @@ struct LearningSessionPage {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.clearDailyQueue(getContext(this), this.currentBookId, new Date().toDateString());
         await UserManager.recordCheckIn(getContext(this));
+
         let plan = AppStorage.get<PlanData>('studyPlan');
         let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
 
         if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
+          // 🌟 核心修复点：在弹出完本对话框之前，立刻调用底层接口将该书打上“已完成”的烙印！
+          await UserManager.recordCompletedBook(getContext(this), plan);
+
           this.completionDialogController.open();
         } else {
           promptAction.showToast({ message: `今日任务已完成！本次掌握 ${totalLearned} 词`, duration: 2000 });
