@@ -7,12 +7,119 @@ import { UserInfo, UserManager } from '../utils/UserManager'
 import { WordService } from '../utils/WordService'
 import { ProgressManager } from '../utils/ProgressManager'
 
+// 自定义完成词书弹窗
+@CustomDialog
+struct CompletionDialog {
+  controller: CustomDialogController
+  bookName: string = ''
+  onConfirm: (index: number) => void = () => {}
+
+  build() {
+    Column() {
+      // 🌟 1. 顶部的鸭子图标
+      Image($r('app.media.ic_duck'))
+        .width(80)
+        .height(80)
+        .margin({ top: -40, bottom: 10 }) // 向上偏移，制造破框而出的视觉感
+
+      Text('恭喜完成该词书！')
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#333')
+        .margin({ bottom: 15 })
+
+      Text(`您已成功背完《${this.bookName}》所有单词！`)
+        .fontSize(14)
+        .fontColor('#666')
+        .textAlign(TextAlign.Center)
+        .lineHeight(20)
+        .padding({ left: 20, right: 20 })
+        .margin({ bottom: 25 })
+
+      // 🌟 2. 选项按钮
+      Button('更换新词书')
+        .width('90%')
+        .height(45)
+        .backgroundColor('#FFCA28')
+        .fontColor('#333')
+        .margin({ bottom: 12 })
+        .onClick(() => {
+          this.controller.close()
+          this.onConfirm(0)
+        })
+
+      Button('重置并二刷')
+        .width('90%')
+        .height(45)
+        .backgroundColor('#F7F7F7')
+        .fontColor('#FF9800')
+        .border({ width: 1, color: '#FFCA28' })
+        .margin({ bottom: 20 })
+        .onClick(() => {
+          this.controller.close()
+          this.onConfirm(1)
+        })
+    }
+    .width('90%')
+    .padding(20)
+    .borderRadius(20)
+    // 🌟 3. 与主页一致的渐变背景
+    .linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
+    })
+    .shadow({ radius: 20, color: '#33000000' })
+  }
+}
+
 @Component
 export struct WordHome {
   @StorageLink('currentUser') user: UserInfo | null = null;
   @StorageLink('studyPlan') @Watch('refreshDailyState') plan: PlanData | null = null;
 
   @StorageLink('totalLearnedInBook') totalLearnedInBook: number = 0;
+
+  // 处理完本后的选择逻辑
+  async handleCompletionSelection(index: number) {
+    if (index === 0) {
+      router.pushUrl({ url: 'pages/BookSelectPage' });
+    } else if (index === 1) {
+      // 这里的逻辑就是你原本 index === 1 里的逻辑
+      await ProgressManager.clearBookProgress(getContext(this), this.plan!.bookId);
+      AppStorage.setOrCreate('totalLearnedInBook', 0);
+      await UserManager.clearActiveSession(getContext(this));
+      await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
+
+      let allUsers = await UserManager.getAllUsers(getContext(this));
+      let realUser = allUsers[this.user!.userId];
+      if (realUser) {
+        realUser.todayStudiedCount = 0;
+        realUser.todayStudiedNew = 0;
+        realUser.todayStudiedReview = 0;
+        let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
+        realUser.todayTargetNew = taskInfo.newCount;
+        realUser.todayTargetReview = taskInfo.reviewCount;
+        realUser.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
+        allUsers[realUser.userId] = realUser;
+        let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
+        await pref.put('AllUsers', JSON.stringify(allUsers));
+        await pref.flush();
+        UserManager.syncUserToAppStorage(realUser);
+      }
+      this.refreshDailyState();
+      promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
+    }
+  }
+
+  // 定义弹窗控制器
+  private completionDialogController: CustomDialogController | null = new CustomDialogController({
+    builder: CompletionDialog({
+      bookName: this.plan ? this.plan.bookName : '',
+      onConfirm: (index: number) => { this.handleCompletionSelection(index) }
+    }),
+    autoCancel: false,
+    customStyle: true // 使用自定义样式，去掉白边
+  })
 
   private lastSeenPlanStr: string = '';
 
@@ -206,45 +313,7 @@ export struct WordHome {
             .width('90%').height(50).fontSize(18).backgroundColor('#FFCA28').fontColor('#333')
             .onClick(() => {
               if (this.totalLearnedInBook >= this.plan!.totalWords && this.plan!.totalWords > 0) {
-                promptAction.showDialog({
-                  title: '🎉 恭喜完本！',
-                  message: `您已成功背完《${this.plan!.bookName}》所有单词！\n接下来您想重置进度开启二刷，还是更换一本新词书？\n（若选择更换，重置权限将在"已完成词书"中为您保留）`,
-                  buttons: [
-                    { text: '更换新词书', color: '#2196F3' },
-                    { text: '重置并二刷', color: '#F44336' }
-                  ]
-                }).then(async (data) => {
-                  if (data.index === 0) {
-                    router.pushUrl({ url: 'pages/BookSelectPage' });
-                  } else if (data.index === 1) {
-                    await ProgressManager.clearBookProgress(getContext(this), this.plan!.bookId);
-                    AppStorage.setOrCreate('totalLearnedInBook', 0);
-                    await UserManager.clearActiveSession(getContext(this));
-                    await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
-
-                    let allUsers = await UserManager.getAllUsers(getContext(this));
-                    let realUser = allUsers[this.user!.userId];
-                    if (realUser) {
-                      realUser.todayStudiedCount = 0;
-                      realUser.todayStudiedNew = 0;
-                      realUser.todayStudiedReview = 0;
-
-                      let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan!);
-                      realUser.todayTargetNew = taskInfo.newCount;
-                      realUser.todayTargetReview = taskInfo.reviewCount;
-                      realUser.todayTarget = taskInfo.newCount + taskInfo.reviewCount;
-
-                      allUsers[realUser.userId] = realUser;
-                      let pref = await preferences.getPreferences(getContext(this), 'UserDatabase');
-                      await pref.put('AllUsers', JSON.stringify(allUsers));
-                      await pref.flush();
-
-                      UserManager.syncUserToAppStorage(realUser);
-                    }
-                    this.refreshDailyState();
-                    promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
-                  }
-                });
+                this.completionDialogController?.open()
                 return;
               }
 

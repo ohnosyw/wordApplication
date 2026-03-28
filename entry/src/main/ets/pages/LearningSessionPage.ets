@@ -31,6 +31,71 @@ interface DailyQueueData {
   sessionTotalReview: number;
 }
 
+// 自定义完成词书弹窗 (与主页风格保持 100% 一致)
+@CustomDialog
+struct CompletionDialog {
+  controller: CustomDialogController
+  bookName: string = ''
+  onConfirm: (index: number) => void = () => {}
+
+  build() {
+    Column() {
+      // 🌟 1. 顶部的鸭子图标
+      Image($r('app.media.ic_duck'))
+        .width(80)
+        .height(80)
+        .margin({ top: -40, bottom: 10 }) // 向上偏移，制造破框而出的视觉感
+
+      Text('恭喜完成该词书！')
+        .fontSize(22)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#333')
+        .margin({ bottom: 15 })
+
+      Text(`您已成功背完《${this.bookName}》所有单词！`)
+        .fontSize(14)
+        .fontColor('#666')
+        .textAlign(TextAlign.Center)
+        .lineHeight(20)
+        .padding({ left: 20, right: 20 })
+        .margin({ bottom: 25 })
+
+      // 🌟 2. 选项按钮
+      Button('更换新词书')
+        .width('90%')
+        .height(45)
+        .backgroundColor('#FFCA28')
+        .fontColor('#333')
+        .margin({ bottom: 12 })
+        .onClick(() => {
+          this.controller.close()
+          this.onConfirm(0)
+        })
+
+      Button('重置并二刷')
+        .width('90%')
+        .height(45)
+        .backgroundColor('#F7F7F7')
+        .fontColor('#FF9800')
+        .border({ width: 1, color: '#FFCA28' })
+        .margin({ bottom: 20 })
+        .onClick(() => {
+          this.controller.close()
+          this.onConfirm(1)
+        })
+    }
+    .width('90%')
+    .padding(20)
+    .borderRadius(20)
+    // 🌟 3. 与主页一致的渐变背景
+    .linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
+    })
+    .shadow({ radius: 20, color: '#33000000' })
+  }
+}
+
 @Entry
 @Component
 struct LearningSessionPage {
@@ -325,6 +390,36 @@ struct LearningSessionPage {
     this.isClicking = false; // 解锁
   }
 
+  // 🌟 新增：定义弹窗控制器
+  completionDialogController: CustomDialogController = new CustomDialogController({
+    builder: CompletionDialog({
+      bookName: this.currentBookName,
+      onConfirm: (index: number) => { this.handleCompletionSelection(index) }
+    }),
+    autoCancel: false,
+    customStyle: true,
+    alignment: DialogAlignment.Center
+  })
+
+  // 🌟 新增：处理弹窗选择的逻辑
+  async handleCompletionSelection(index: number) {
+    if (index === 0) {
+      router.replaceUrl({ url: 'pages/BookSelectPage' });
+    } else if (index === 1) {
+      await ProgressManager.clearBookProgress(getContext(this), this.currentBookId);
+      AppStorage.setOrCreate('totalLearnedInBook', 0);
+      let user = AppStorage.get<UserInfo>('currentUser');
+      if (user) {
+        user.todayStudiedCount = 0;
+        user.todayStudiedNew = 0;
+        user.todayStudiedReview = 0;
+        UserManager.syncUserToAppStorage(user);
+      }
+      promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
+      router.back();
+    }
+  }
+
   // 🌟 连点防御罩开启
   async nextWord() {
     if (this.isClicking) return;
@@ -348,34 +443,7 @@ struct LearningSessionPage {
         let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
 
         if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
-          await UserManager.recordCompletedBook(getContext(this), plan);
-
-          promptAction.showDialog({
-            title: '🎉 恭喜完本！',
-            message: `太棒了！您已成功背完《${plan.bookName}》所有单词！\n接下来您想重置进度开启二刷，还是更换一本新词书？\n（若选择更换词书，重置权限将在"已完成词书"中为您永久保留）`,
-            buttons: [
-              { text: '更换新词书', color: '#2196F3' },
-              { text: '重置并二刷', color: '#F44336' }
-            ]
-          }).then(async (data) => {
-            if (data.index === 0) {
-              router.replaceUrl({ url: 'pages/BookSelectPage' });
-            } else if (data.index === 1) {
-              await ProgressManager.clearBookProgress(getContext(this), this.currentBookId);
-              AppStorage.setOrCreate('totalLearnedInBook', 0);
-              let user = AppStorage.get<UserInfo>('currentUser');
-              if (user) {
-                user.todayStudiedCount = 0;
-                user.todayStudiedNew = 0;
-                user.todayStudiedReview = 0;
-                UserManager.syncUserToAppStorage(user);
-              }
-              promptAction.showToast({ message: '进度已重置，开启二刷之旅！' });
-              router.back();
-            } else {
-              router.back();
-            }
-          })
+          this.completionDialogController.open();
         } else {
           promptAction.showToast({ message: `今日任务已完成！本次累计掌握了 ${totalLearned} 个单词`, duration: 2000 });
           setTimeout(() => { router.back() }, 1500);
