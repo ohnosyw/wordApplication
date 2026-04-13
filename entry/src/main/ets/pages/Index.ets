@@ -1,4 +1,3 @@
-// entry/src/main/ets/pages/MainPage.ets
 import { WordHome } from '../view/WordHome'
 import { MineHome } from '../view/MineHome'
 
@@ -12,7 +11,6 @@ struct MainPage {
     Column() {
       Image(icon)
         .width(24).height(24)
-        // 🌟 细节优化：选中颜色改为与主题呼应的亮橙色，未选中保持灰色
         .fillColor(this.currentIndex === index ? '#FF9800' : '#999')
       Text(title)
         .margin({ top: 4 })
@@ -38,7 +36,6 @@ struct MainPage {
       this.currentIndex = index
     })
     .barHeight(60)
-    // 🌟 核心修改：设置底部导航栏的背景颜色为高级淡灰色
     .barBackgroundColor('#F7F7F7')
   }
 }

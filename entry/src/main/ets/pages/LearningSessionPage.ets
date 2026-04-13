@@ -1,4 +1,3 @@
-// entry/src/main/ets/pages/LearningSessionPage.ets
 import router from '@ohos.router'
 import promptAction from '@ohos.promptAction'
 import { WordEntry, TransItem, SentenceItem } from '../model/WordModel'
@@ -9,6 +8,7 @@ import { PlanData } from '../model/StudyPlan'
 import { UserManager, UserInfo } from '../utils/UserManager'
 import { CollectionManager } from '../utils/CollectionManager'
 import { DataLoader } from '../utils/DataLoader'
+
 
 interface CacheData {
   date: string;
@@ -24,6 +24,7 @@ interface CacheData {
   lastAnswerIsKnown: boolean;
 }
 
+//当天任务清单
 interface DailyQueueData {
   wordQueue: WordEntry[];
   initialNewWordIds: string[];
@@ -31,7 +32,7 @@ interface DailyQueueData {
   sessionTotalReview: number;
 }
 
-// 自定义完成词书弹窗 (保持主页风格)
+// 自定义完成词书弹窗
 @CustomDialog
 struct CompletionDialog {
   controller: CustomDialogController
@@ -46,7 +47,7 @@ struct CompletionDialog {
         .height(80)
         .margin({ top: -40, bottom: 10 })
 
-      Text('🎉 恭喜完本！')
+      Text(' 恭喜完成该词书！')
         .fontSize(22)
         .fontWeight(FontWeight.Bold)
         .fontColor('#333')
@@ -87,7 +88,6 @@ struct CompletionDialog {
     .width('90%')
     .padding(20)
     .borderRadius(20)
-    // 🌟 3. 与主页一致的渐变背景
     .linearGradient({
       direction: GradientDirection.Bottom,
       colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
