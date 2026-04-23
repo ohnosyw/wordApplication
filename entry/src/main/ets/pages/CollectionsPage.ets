@@ -8,7 +8,6 @@ struct CollectionsPage {
   @State collections: Record<string, CollectionData> = {};
   @State bookIds: string[] = [];
 
-  // 🌟 莫兰迪颜色匹配函数
   private getBookColor(bookId: string): string {
     const colorMap: Record<string, string> = {
       'cet4': '#7EAC8A', 'cet6': '#D1A075', 'kaoyan': '#CB8585',

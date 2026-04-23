@@ -19,7 +19,6 @@ interface BookInfo {
 struct BookSelectPage {
   @State selectedBookId: string = ''
 
-  // 莫兰迪低饱和度配色方案
   private books: BookInfo[] = [
     {
       id: 'cet4',

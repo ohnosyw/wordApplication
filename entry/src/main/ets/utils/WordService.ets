@@ -14,13 +14,16 @@ export interface TaskInfo {
 }
 
 export class WordService {
+  //生成今日学习清单
   static async generateTodayQueue(context: Context, plan: PlanData): Promise<WordEntry[]> {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
 
     let neededNew = plan.dailyNew;
     let neededReview = plan.dailyReview;
 
+    //如果用户今天已经学习过（上次学习日期是今天）
     if (currentUser && currentUser.lastStudyDate === new Date().toDateString()) {
+      //用户是否有重新设定计划？
       let targetNew = currentUser.todayTargetNew !== undefined ? currentUser.todayTargetNew : plan.dailyNew;
       let studiedNew = currentUser.todayStudiedNew !== undefined ? currentUser.todayStudiedNew : 0;
       neededNew = Math.max(0, targetNew - studiedNew);
@@ -38,8 +41,10 @@ export class WordService {
 
     for (let i = 0; i < allWords.length; i++) {
       let word = allWords[i];
-      // 🌟 修复点 1：给 ID 加上词书专属命名空间，防止进度“张冠李戴”
+      // 给 ID 加上词书专属命名空间，防止词书间进度串联
       let namespacedId = `${plan.bookId}_${word.content.word.wordId}`;
+
+      //进度表中单词查询？？
       if (progressMap[namespacedId]) {
         learned.push(word);
       } else {
@@ -49,6 +54,7 @@ export class WordService {
 
     let finalNew = unlearned.slice(0, neededNew);
 
+    //按下次复习日期排序已学单词
     learned.sort((a, b) => {
       let aProg = progressMap[`${plan.bookId}_${a.content.word.wordId}`];
       let bProg = progressMap[`${plan.bookId}_${b.content.word.wordId}`];
@@ -60,10 +66,12 @@ export class WordService {
     let finalReview = learned.slice(0, neededReview);
 
     let todayQueue: WordEntry[] = [];
+    //如果学习模式为 0（顺序模式）
     if (plan.studyMode === 0) {
       todayQueue = finalNew.concat(finalReview);
     } else {
       todayQueue = finalNew.concat(finalReview);
+      //使用Fisher-Yates算法打乱顺序
       for (let i = todayQueue.length - 1; i > 0; i--) {
         let j = Math.floor(Math.random() * (i + 1));
         let temp = todayQueue[i];
@@ -85,7 +93,7 @@ export class WordService {
     let now = Date.now();
 
     for (let i = 0; i < allWords.length; i++) {
-      // 🌟 修复点 2：严格按照命名空间检查本书学习量
+      // 按照命名空间检查本书学习量
       let namespacedId = `${plan.bookId}_${allWords[i].content.word.wordId}`;
       let progress = progressMap[namespacedId];
       if (progress) {

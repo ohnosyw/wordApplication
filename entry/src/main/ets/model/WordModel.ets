@@ -26,8 +26,8 @@ export interface WordDeepContent {
   sentence?: SentenceWrapper;
   phrase?: PhraseWrapper;
   syno?: SynoWrapper;
-  exam?: ExamItem[];         // 修复：使用明确定义的 ExamItem 数组替换 any[]
-  relWord?: RelWordWrapper;  // 修复：使用明确定义的 RelWordWrapper 替换 any
+  exam?: ExamItem[];
+  relWord?: RelWordWrapper;
 }
 
 // ---------------- 翻译 ----------------
@@ -70,14 +70,14 @@ export interface SynoWrapper {
 export interface SynoItem {
   pos: string;
   tran: string;
-  hwds: HwdItem[]; // 修复：使用独立的 HwdItem 类型替换了字面量 { w: string }
+  hwds: HwdItem[];
 }
 
 export interface HwdItem {
   w: string;
 }
 
-// ---------------- 考试真题 (新增) ----------------
+// ---------------- 考试真题 ----------------
 export interface ExamItem {
   question: string;
   answer: ExamAnswer;
@@ -95,7 +95,7 @@ export interface ExamChoice {
   choice: string;
 }
 
-// ---------------- 同根词 (新增) ----------------
+// ---------------- 同根词 ----------------
 export interface RelWordWrapper {
   rels: RelItem[];
   desc: string;

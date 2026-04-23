@@ -41,7 +41,6 @@ struct CompletionDialog {
 
   build() {
     Column() {
-      // 🌟 1. 顶部的鸭子图标
       Image($r('app.media.ic_duck'))
         .width(80)
         .height(80)
@@ -61,7 +60,6 @@ struct CompletionDialog {
         .padding({ left: 20, right: 20 })
         .margin({ bottom: 25 })
 
-      // 🌟 2. 选项按钮
       Button('更换新词书')
         .width('90%')
         .height(45)

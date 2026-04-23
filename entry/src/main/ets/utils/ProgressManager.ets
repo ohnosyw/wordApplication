@@ -25,6 +25,7 @@ export class ProgressManager {
       }
 
       if (ProgressManager.memoryCache && ProgressManager.currentUserId === currentUser.userId) {
+        //直接返回内存缓存（避免重复读取本地存储，提升性能）
         return ProgressManager.memoryCache;
       }
 

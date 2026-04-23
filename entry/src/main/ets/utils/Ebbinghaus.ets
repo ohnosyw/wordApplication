@@ -45,7 +45,7 @@ export class Ebbinghaus {
       newProgress.interval = 1;
     }
 
-    // 动态调整简易度因子 (公式固定，根据答题情况增加或减少)
+    // 动态调整简易度因子
     newProgress.efactor = newProgress.efactor + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02));
     if (newProgress.efactor < 1.3) {
       newProgress.efactor = 1.3; // 最小值底线
