@@ -9,19 +9,19 @@ import { UserManager, UserInfo } from '../utils/UserManager'
 import { CollectionManager } from '../utils/CollectionManager'
 import { DataLoader } from '../utils/DataLoader'
 
-
+// 用户中途退出时，整个状态机会被序列化进此结构。
 interface CacheData {
   date: string;
-  wordQueue: WordEntry[];
-  currentIndex: number;
-  sessionTotalNew: number;
-  sessionTotalReview: number;
-  sessionFinishedNew: number;
-  sessionFinishedReview: number;
-  initialNewWordIds: string[];
-  completedWordIds: string[];
-  isShowDetails: boolean;
-  lastAnswerIsKnown: boolean;
+  wordQueue: WordEntry[];// 尚未背完的队列
+  currentIndex: number;// 游标位置
+  sessionTotalNew: number;// 本次会话总新词数
+  sessionTotalReview: number;// 本次会话总复习数
+  sessionFinishedNew: number;// 已完成的新词数
+  sessionFinishedReview: number;// 已完成的复习数
+  initialNewWordIds: string[];// 用于区分“这是新词还是旧词”的字典
+  completedWordIds: string[];// 在本次会话中已经彻底掌握的词
+  isShowDetails: boolean;// 退出时是否正处于展示释义的状态
+  lastAnswerIsKnown: boolean;// 退出时的最后一次回答状态
 }
 
 //当天任务清单
@@ -97,25 +97,27 @@ struct CompletionDialog {
 @Entry
 @Component
 struct LearningSessionPage {
-  @State wordQueue: WordEntry[] = [];
-  @State currentIndex: number = 0;
-  @State isShowDetails: boolean = false;
+  @State wordQueue: WordEntry[] = [];// 当前需要背诵的所有单词队列
+  @State currentIndex: number = 0;// 当前卡片指向队列中的第几个单词
+  @State isShowDetails: boolean = false;// 是否展示释义
   @State isLoading: boolean = true;
   @State currentProgress: WordProgress = { wordId: '', repetition: 0, interval: 0, efactor: 2.5, nextReviewDate: 0 } as WordProgress;
 
+  // 会话统计 (用于顶部状态栏展示：10/20)
   @State sessionTotalNew: number = 0;
   @State sessionTotalReview: number = 0;
   @State sessionFinishedNew: number = 0;
   @State sessionFinishedReview: number = 0;
 
   @State lastAnswerIsKnown: boolean = false;
-  private previousProgressBackup: WordProgress | null = null;
+  private previousProgressBackup: WordProgress | null = null;// 备份点击前的进度，用于撤销操作
 
   private initialNewWordIds: string[] = [];
   private completedWordIds: string[] = [];
 
-  @State isCollectionMode: boolean = false;
-  @State isCurrentWordCollected: boolean = false;
+  // 模式切换状态
+  @State isCollectionMode: boolean = false;// 是否是“收藏夹特训模式”
+  @State isCurrentWordCollected: boolean = false;// 当前单词是否已被标星
   private currentBookId: string = '';
   private currentBookName: string = '';
 
@@ -133,17 +135,19 @@ struct LearningSessionPage {
   })
 
   aboutToAppear() {
-    this.loadWords();
+    this.loadWords();// 加载单词数据
   }
 
   onBackPress() {
-    this.saveSessionToCache();
+    this.saveSessionToCache();// 自动保存当前学习进度
     return false;
   }
 
+  // 将当前的内存状态全量存入沙箱
   async saveSessionToCache() {
     if (this.wordQueue.length === 0) return;
 
+    // 收藏模式的断点续传（只记录上次背到了哪个词）
     if (this.isCollectionMode) {
       if (this.currentIndex < this.wordQueue.length) {
         let currentWordId = this.wordQueue[this.currentIndex].content.word.wordId;
@@ -152,6 +156,7 @@ struct LearningSessionPage {
       return;
     }
 
+    // 正常模式的断点续传（序列化整个上下文，包括游标和打分）
     let sessionData: CacheData = {
       date: new Date().toDateString(),
       wordQueue: this.wordQueue,
@@ -168,15 +173,18 @@ struct LearningSessionPage {
     await UserManager.saveActiveSession(getContext(this), JSON.stringify(sessionData));
   }
 
+  // 决定数据是从头生成，还是从缓存中恢复
   async loadWords() {
     this.isLoading = true;
     let params = router.getParams() as Record<string, Object>;
 
+    // 用户从收藏页点击“开始特训”进入
     if (params && params['mode'] === 'collection') {
       this.isCollectionMode = true;
       this.currentBookId = params['bookId'] as string;
       this.currentBookName = params['bookName'] as string;
 
+      // 获取该用户收藏的所有单词ID
       let cols = await CollectionManager.getCollections(getContext(this));
       let targetWordIds: string[] = [];
       let dailyLimit = 20;
@@ -188,6 +196,7 @@ struct LearningSessionPage {
         lastWordId = cols[this.currentBookId].lastWordId;
       }
 
+      // 加载整本词书，并过滤出收藏的单词
       let allWords = await DataLoader.loadWordBook(getContext(this), `${this.currentBookId}.json`);
       let collectionWords = allWords.filter(w => targetWordIds.includes(w.content.word.wordId));
 
@@ -198,6 +207,7 @@ struct LearningSessionPage {
           if (idx !== -1) startIndex = idx;
         }
 
+        // 从上次学到的单词开始，取 N 个单词
         let finalQueue: WordEntry[] = [];
         let count = Math.min(dailyLimit, collectionWords.length);
         for (let i = 0; i < count; i++) {
@@ -205,10 +215,12 @@ struct LearningSessionPage {
           finalQueue.push(collectionWords[idx]);
         }
 
+        // 赋值给学习队列
         this.wordQueue = finalQueue;
         this.sessionTotalReview = this.wordQueue.length;
       }
     } else {
+      // 常规打卡模式
       let plan = AppStorage.get<PlanData>('studyPlan');
       if (!plan) { promptAction.showToast({ message: '计划异常' }); router.back(); return; }
 
@@ -219,6 +231,7 @@ struct LearningSessionPage {
       let today = new Date().toDateString();
       if (sessionStr) {
         let cachedSession = JSON.parse(sessionStr) as CacheData;
+        // 如果是今天的进度，直接恢复
         if (cachedSession.date === today && cachedSession.wordQueue && cachedSession.wordQueue.length > 0) {
           this.wordQueue = cachedSession.wordQueue;
           this.currentIndex = cachedSession.currentIndex;
@@ -238,6 +251,7 @@ struct LearningSessionPage {
         }
       }
 
+      // 检查有没有今日已生成的队列
       let queueStr = await UserManager.getDailyQueue(getContext(this), this.currentBookId, today);
       if (queueStr) {
         let dailyData = JSON.parse(queueStr) as DailyQueueData;
@@ -253,9 +267,11 @@ struct LearningSessionPage {
         this.isShowDetails = false;
         this.lastAnswerIsKnown = false;
       } else {
+        // 今天已经生成过学习列表
         this.wordQueue = await WordService.generateTodayQueue(getContext(this), plan);
         if (this.wordQueue.length > 0) {
           let map = await ProgressManager.getProgressMap(getContext(this));
+          // 遍历队列，区分哪些是新词，哪些是复习词
           for (let word of this.wordQueue) {
             let rawId = word.content.word.wordId;
             let namespacedId = `${this.currentBookId}_${rawId}`;
@@ -288,6 +304,7 @@ struct LearningSessionPage {
     this.isLoading = false;
   }
 
+  // 检查当前单词在底层的复习进度，以及是否被标了星号
   async prepareCurrentWord() {
     let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
     let namespacedId = `${this.currentBookId}_${rawId}`;
@@ -301,6 +318,7 @@ struct LearningSessionPage {
     this.isCurrentWordCollected = await CollectionManager.isCollected(getContext(this), this.currentBookId, rawId);
   }
 
+  // 处理收藏单词逻辑
   async toggleStar() {
     let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
     this.isCurrentWordCollected = await CollectionManager.toggleCollection(
@@ -312,10 +330,12 @@ struct LearningSessionPage {
     promptAction.showToast({ message: this.isCurrentWordCollected ? '已加入收藏' : '已取消收藏' });
   }
 
+  // 处理用户的“认识 / 不认识”点击事件
   async handleAnswer(isKnown: boolean) {
     if (this.isClicking) return;
     this.isClicking = true;
 
+    // 备份旧进度：如果用户点击“记错了”，需要靠这个备份来回滚
     this.previousProgressBackup = {
       wordId: this.currentProgress.wordId,
       repetition: this.currentProgress.repetition,
@@ -326,12 +346,14 @@ struct LearningSessionPage {
 
     this.lastAnswerIsKnown = isKnown;
 
+    // 呼叫艾宾浩斯引擎，计算下一次复习时间，并落盘
     let newProgress = Ebbinghaus.calculateNextReview(this.currentProgress, isKnown);
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
     this.currentProgress = newProgress;
 
     let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
 
+    // 如果“认识”，且这个词在本次会话中还没算过分
     if (isKnown && !this.completedWordIds.includes(rawId)) {
       this.completedWordIds.push(rawId);
       if (this.isCollectionMode) {
@@ -349,6 +371,7 @@ struct LearningSessionPage {
       }
     }
 
+    // 如果“不认识”，将该词重新加入队列
     if (!isKnown) {
       this.wordQueue.push(this.wordQueue[this.currentIndex]);
     }
@@ -357,9 +380,12 @@ struct LearningSessionPage {
     this.isClicking = false;
   }
 
+  // 处理用户的“记错了”点击事件
   async markAsWrong() {
     if (this.isClicking || !this.previousProgressBackup) return;
     this.isClicking = true;
+
+    // 拿最初的备份去计算 false (不认识) 的结果
     let newProgress = Ebbinghaus.calculateNextReview(this.previousProgressBackup, false);
     await ProgressManager.saveWordProgress(getContext(this), newProgress);
     this.currentProgress = newProgress;
@@ -367,6 +393,7 @@ struct LearningSessionPage {
     let rawId = this.wordQueue[this.currentIndex].content.word.wordId;
     let index = this.completedWordIds.indexOf(rawId);
 
+    // 扣除刚刚加上的统计分数
     if (index > -1) {
       this.completedWordIds.splice(index, 1);
       if (this.isCollectionMode) {
@@ -384,6 +411,7 @@ struct LearningSessionPage {
       }
     }
 
+    // 将该词再次追加到队列末尾
     this.wordQueue.push(this.wordQueue[this.currentIndex]);
     this.lastAnswerIsKnown = false;
     promptAction.showToast({ message: '已标记为不认识' });
@@ -391,6 +419,7 @@ struct LearningSessionPage {
     this.isClicking = false;
   }
 
+  // 处理用户完本逻辑
   async handleCompletionSelection(index: number) {
     if (index === 0) {
       router.replaceUrl({ url: 'pages/BookSelectPage' });
@@ -409,10 +438,12 @@ struct LearningSessionPage {
     }
   }
 
+  // 点击“下一个 / 完成任务”
   async nextWord() {
     if (this.isClicking) return;
     this.isClicking = true;
 
+    // 还有下一个词，游标前移，重置卡片状态
     if (this.currentIndex < this.wordQueue.length - 1) {
       this.currentIndex += 1;
       this.isShowDetails = false;
@@ -420,8 +451,10 @@ struct LearningSessionPage {
       this.saveSessionToCache();
       this.isClicking = false;
     } else {
+      // 全部背完，执行清场与撒花逻辑
       let totalLearned = this.sessionFinishedNew + this.sessionFinishedReview;
       if (!this.isCollectionMode) {
+        // 清除会话缓存，打上当天的 CheckIn (连签) 印记
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.clearDailyQueue(getContext(this), this.currentBookId, new Date().toDateString());
         await UserManager.recordCheckIn(getContext(this));
@@ -429,6 +462,7 @@ struct LearningSessionPage {
         let plan = AppStorage.get<PlanData>('studyPlan');
         let currentTotal = AppStorage.get<number>('totalLearnedInBook') || 0;
 
+        // 完本判断
         if (plan && currentTotal >= plan.totalWords && plan.totalWords > 0) {
           await UserManager.recordCompletedBook(getContext(this), plan);
           this.completionDialogController.open();
@@ -437,6 +471,7 @@ struct LearningSessionPage {
           setTimeout(() => { router.back() }, 1500);
         }
       } else {
+        // 特训模式结束，锚点推进到下一个词
         let cols = await CollectionManager.getCollections(getContext(this));
         if (cols[this.currentBookId] && cols[this.currentBookId].wordIds.length > 0) {
           let globalWords = cols[this.currentBookId].wordIds;
@@ -502,7 +537,7 @@ struct LearningSessionPage {
                 if (this.wordQueue[this.currentIndex].content.word.content.trans) {
                   Column() {
                     ForEach(this.wordQueue[this.currentIndex].content.word.content.trans || [], (tran: TransItem) => {
-                      // 🌟 核心修复：防止释义长文本溢出屏幕
+                      // 防止释义长文本溢出屏幕
                       Row() {
                         Text(tran.pos + ".").fontSize(16).fontColor('#FF9800').fontWeight(FontWeight.Bold).margin({ right: 8 });
                         Text(tran.tranCn)

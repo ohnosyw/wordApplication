@@ -16,11 +16,10 @@ struct CompletionDialog {
 
   build() {
     Column() {
-      // 🌟 1. 顶部的鸭子图标
       Image($r('app.media.ic_duck'))
         .width(80)
         .height(80)
-        .margin({ top: -40, bottom: 10 }) // 向上偏移，制造破框而出的视觉感
+        .margin({ top: -40, bottom: 10 })
 
       Text('恭喜完成该词书！')
         .fontSize(22)
@@ -36,7 +35,6 @@ struct CompletionDialog {
         .padding({ left: 20, right: 20 })
         .margin({ bottom: 25 })
 
-      // 🌟 2. 选项按钮
       Button('更换新词书')
         .width('90%')
         .height(45)
@@ -63,7 +61,6 @@ struct CompletionDialog {
     .width('90%')
     .padding(20)
     .borderRadius(20)
-    // 🌟 3. 与主页一致的渐变背景
     .linearGradient({
       direction: GradientDirection.Bottom,
       colors: [['#FFFDE7', 0.0], ['#FFF9C4', 1.0]]
@@ -72,7 +69,7 @@ struct CompletionDialog {
   }
 }
 
-// 🌟 新增：自定义加练弹窗
+// 自定义加练弹窗
 @CustomDialog
 struct ExtraStudyDialog {
   controller: CustomDialogController
@@ -80,7 +77,6 @@ struct ExtraStudyDialog {
 
   build() {
     Column() {
-      // 同样的鸭子图标偏移设计
       Image($r('app.media.ic_duck'))
         .width(80)
         .height(80)
@@ -135,6 +131,7 @@ struct ExtraStudyDialog {
 
 @Component
 export struct WordHome {
+  // 全局状态双向绑定
   @StorageLink('currentUser') user: UserInfo | null = null;
   @StorageLink('studyPlan') @Watch('refreshDailyState') plan: PlanData | null = null;
 
@@ -145,12 +142,12 @@ export struct WordHome {
     if (index === 0) {
       router.pushUrl({ url: 'pages/BookSelectPage' });
     } else if (index === 1) {
-      // 这里的逻辑就是你原本 index === 1 里的逻辑
+      // 重置当前词书的所有底层记忆和队列状态
       await ProgressManager.clearBookProgress(getContext(this), this.plan!.bookId);
       AppStorage.setOrCreate('totalLearnedInBook', 0);
       await UserManager.clearActiveSession(getContext(this));
       await UserManager.clearDailyQueue(getContext(this), this.plan!.bookId, new Date().toDateString());
-
+      // 重新呼叫 WordService 生成新的每日目标
       let allUsers = await UserManager.getAllUsers(getContext(this));
       let realUser = allUsers[this.user!.userId];
       if (realUser) {
@@ -179,10 +176,10 @@ export struct WordHome {
       onConfirm: (index: number) => { this.handleCompletionSelection(index) }
     }),
     autoCancel: false,
-    customStyle: true // 使用自定义样式，去掉白边
+    customStyle: true
   })
 
-  // 🌟 修改：在原有控制器下方增加加练控制器
+  // 在原有控制器下方增加加练控制器
   private extraStudyDialogController: CustomDialogController | null = new CustomDialogController({
     builder: ExtraStudyDialog({
       onConfirm: () => { this.handleExtraStudy() }
@@ -191,7 +188,7 @@ export struct WordHome {
     customStyle: true
   })
 
-  // 🌟 新增：处理加练的逻辑函数
+  // 处理加练的逻辑函数
   async handleExtraStudy() {
     if (this.plan) {
       let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan);
@@ -200,6 +197,7 @@ export struct WordHome {
     }
   }
 
+  // 用于比对计划是否发生变更的快照
   private lastSeenPlanStr: string = '';
 
   async aboutToAppear() {
@@ -212,9 +210,11 @@ export struct WordHome {
     this.refreshDailyState();
   }
 
+  // 判断是否跨天、是否换了书、是否改了计划
   async refreshDailyState() {
     if (!this.user || !this.plan) return;
 
+    // 检查计划是否发生变更
     let currentPlanStr = JSON.stringify(this.plan);
     let isPlanAdjusted = false;
     if (this.lastSeenPlanStr !== '' && this.lastSeenPlanStr !== currentPlanStr) {
@@ -222,6 +222,7 @@ export struct WordHome {
     }
     this.lastSeenPlanStr = currentPlanStr;
 
+    // 计算当前词书的总进度
     let taskInfo = await WordService.getTodayTaskInfo(getContext(this), this.plan);
     this.totalLearnedInBook = taskInfo.totalLearned;
 
@@ -236,13 +237,16 @@ export struct WordHome {
     let today = new Date().toDateString();
     let isBookSwitched = dbUser.currentStudyBookId !== this.plan.bookId;
 
+    // 跨天/换书/改计划
     if (dbUser.lastStudyDate !== today || !dbUser.todayTarget || dbUser.todayTarget === 0 || dbUser.todayStudiedCount === undefined || isBookSwitched || isPlanAdjusted) {
 
+      // 如果是换书或改计划，作废之前的背词会话
       if (isBookSwitched || isPlanAdjusted) {
         await UserManager.clearActiveSession(getContext(this));
         await UserManager.clearDailyQueue(getContext(this), this.plan.bookId, today);
       }
 
+      // 重新生成今日目标
       let targetNew = taskInfo.newCount;
       let targetReview = taskInfo.reviewCount;
 
@@ -288,7 +292,7 @@ export struct WordHome {
 
   build() {
     Column() {
-      // 头部栏：恢复大气尺寸
+      // 头部栏
       Row() {
         Image($r('app.media.ic_duck'))
           .width(32)
@@ -313,10 +317,8 @@ export struct WordHome {
           Button('选择我的第一本词书').width('80%').height(50).backgroundColor('#FFCA28').fontColor('#333').onClick(() => router.pushUrl({ url: 'pages/BookSelectPage' }))
         }.width('100%').layoutWeight(1).alignItems(HorizontalAlign.Center)
       } else {
-        // 🌟 核心修改：利用 SpaceEvenly 让组件饱满地撑开整个屏幕，去掉了不必要的固定外边距
         Column() {
-
-          // 栏目 1：更换词书与任务总览 (恢复大号字体和间距)
+          // 栏目 1：更换词书与任务总览
           Column() {
             Row() { Text(this.plan.bookName).fontSize(20).fontWeight(FontWeight.Bold); Blank(); Text('更换词书 >').fontSize(14).fontColor('#FF9800').onClick(() => { router.pushUrl({ url: 'pages/BookSelectPage' }) }) }.width('100%')
             Row() {
@@ -330,7 +332,7 @@ export struct WordHome {
           .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
           .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-          // 🌟 栏目 2：词书总进度 (换成 ic_duck2)
+          // 栏目 2：词书总进度
           Column() {
             Row() {
               Text('词书总进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
@@ -342,7 +344,6 @@ export struct WordHome {
               Row().width('100%').height(12).backgroundColor('#FFF8E1').borderRadius(6)
               Row().width(`${this.plan.totalWords > 0 ? (this.totalLearnedInBook / this.plan.totalWords) * 100 : 0}%`).height(12).backgroundColor('#FFCA28').borderRadius(6).animation({ duration: 500, curve: Curve.EaseInOut })
 
-              // 🌟 替换为 ic_duck2，并恢复饱满尺寸
               Image($r('app.media.ic_duck2'))
                 .width(28).height(28)
                 .margin({ left: `${this.plan.totalWords > 0 ? (this.totalLearnedInBook / this.plan.totalWords) * 100 : 0}%` })
@@ -364,7 +365,7 @@ export struct WordHome {
           .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
           .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-          // 🌟 栏目 4：今日进度 (换成 ic_duck2)
+          // 栏目 4：今日进度
           Column() {
             Row() {
               Text('今日进度').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
@@ -376,7 +377,6 @@ export struct WordHome {
               Row().width('100%').height(12).backgroundColor('#FFF8E1').borderRadius(6)
               Row().width(`${(this.user.todayTarget && this.user.todayTarget > 0) ? ((this.user.todayStudiedCount || 0) / this.user.todayTarget) * 100 : 0}%`).height(12).backgroundColor('#FFCA28').borderRadius(6).animation({ duration: 500, curve: Curve.EaseInOut })
 
-              // 🌟 替换为 ic_duck2
               Image($r('app.media.ic_duck2'))
                 .width(28).height(28)
                 .margin({ left: `${(this.user.todayTarget && this.user.todayTarget > 0) ? ((this.user.todayStudiedCount || 0) / this.user.todayTarget) * 100 : 0}%` })
@@ -387,7 +387,6 @@ export struct WordHome {
           .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
           .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-          // 按钮恢复饱满尺寸
           Button(this.user.todayStudiedCount !== undefined && this.user.todayTarget !== undefined && this.user.todayStudiedCount > 0 && this.user.todayStudiedCount < this.user.todayTarget ? '继续学习' : '开始背单词')
             .width('90%').height(50).fontSize(18).backgroundColor('#FFCA28').fontColor('#333')
             .onClick(() => {
@@ -400,7 +399,6 @@ export struct WordHome {
               let target = this.user!.todayTarget !== undefined ? this.user!.todayTarget : 0;
 
               if (studied >= target && target > 0) {
-                // 🌟 修改这里：不再使用 promptAction，改为打开自定义弹窗
                 this.extraStudyDialogController?.open()
               } else {
                 router.pushUrl({ url: 'pages/LearningSessionPage' })
@@ -408,10 +406,9 @@ export struct WordHome {
             })
         }
         .width('100%')
-        .layoutWeight(1) // 占满下方全部屏幕高度
-        // 🌟 核心：均匀分配剩余的所有垂直空间，自动撑满不留白！
+        .layoutWeight(1)
         .justifyContent(FlexAlign.SpaceEvenly)
-        .padding({ bottom: 10 }) // 底部稍微留一点点呼吸空间
+        .padding({ bottom: 10 })
       }
     }
     .width('100%').height('100%')

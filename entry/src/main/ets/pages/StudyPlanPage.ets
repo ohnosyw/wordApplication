@@ -11,25 +11,26 @@ struct StudyPlanPage {
   @State studyMode: number = 0
   @State plan: PlanData | null = null;
 
-  // 每日任务滑轮数据
+  // 每日任务数据
   private options: string[] = [];
   private newWordsList: number[] = [];
-  @State selectedPickerIndex: number = 3;
+  @State selectedPickerIndex: number = 3;// 默认选中20个词
 
-  // 学习模式滑轮数据
+  // 学习模式数据
   private modeOptions: string[] = ['先学新词再复习', '新词复习混合'];
 
-  // 🌟 为了匹配 BookSelectPage 的莫兰迪色系，这里定义一个简单的颜色查找
   private getBookColor(bookId: string): string {
     const colorMap: Record<string, string> = {
       'cet4': '#7EAC8A', 'cet6': '#D1A075', 'kaoyan': '#CB8585',
       'junior_high': '#A2B889', 'high_school': '#829DBF', 'ielts': '#A68CB2',
       'sat': '#7B88B5', 'gmat': '#7AAEB5'
     };
-    return colorMap[bookId] || '#9CA3AF'; // 找不到则返回中性灰
+    return colorMap[bookId] || '#9CA3AF';
   }
 
+  // 读取当前计划，并动态生成 Picker (滚轮) 的选项数据
   aboutToAppear(): void {
+    // 从内存中拉取最新计划
     let currentPlan = AppStorage.get<PlanData>('studyPlan');
     if (currentPlan) {
       this.plan = currentPlan;
@@ -40,15 +41,19 @@ struct StudyPlanPage {
       this.dailyReview = Math.round(this.dailyNew * 2.5);
     }
 
+    // 动态生成滚轮选项
     let totalWords = this.plan ? this.plan.totalWords : 1000;
 
+    // 从每天 5 个词到 100 个词，步长为 5 进行循环
     for (let i = 5; i <= 100; i += 5) {
       this.newWordsList.push(i);
+      // 根据每日新词预估复习量
       let review = Math.round(i * 2.5);
+      // 计算背完该书所需的总天数
       let days = Math.ceil(totalWords / i);
       this.options.push(`新词 ${i}  预计复习 ${review}  需要${days}天`);
     }
-
+    // 计算当前计划在滚轮中的初始位置，确保打开页面时滚轮指在用户当前的档位上
     let index = this.newWordsList.indexOf(this.dailyNew);
     this.selectedPickerIndex = index >= 0 ? index : 3;
   }
@@ -70,12 +75,10 @@ struct StudyPlanPage {
 
       Scroll() {
         Column() {
-
-          // 🌟 核心修改：将当前词书档案换成与 BookSelectPage 一致的通栏样式
+          // 词书信息展示卡片
           if (this.plan) {
             Column() {
               Row() {
-                // 莫兰迪色块图标
                 Column() {
                   Text(this.plan.bookName.substring(0, 2))
                     .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White)
@@ -119,6 +122,7 @@ struct StudyPlanPage {
               .canLoop(false)
               .textStyle({ color: '#999', font: { size: 14 } })
               .selectedTextStyle({ color: '#FF9800', font: { size: 16, weight: FontWeight.Bold } })
+              // 滑动停止时，立即更新底层的 dailyNew 和 dailyReview 变量
               .onChange((value: string | string[], index: number | number[]) => {
                 let idx = typeof index === 'number' ? index : index[0];
                 this.selectedPickerIndex = idx;
@@ -146,7 +150,6 @@ struct StudyPlanPage {
           .width('90%').padding(20).backgroundColor('#F7F7F7').borderRadius(15)
           .margin({ top: 20 }).shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
 
-          // 底部情绪插画
           Column() {
             Image($r('app.media.ic_duck')).width(60).height(60).opacity(0.8)
             Text('选好计划，就不能反悔了鸭！').fontSize(12).fontColor('#BDBDBD').margin({ top: 8 })
@@ -163,14 +166,17 @@ struct StudyPlanPage {
     })
   }
 
+  // 持久化保存修改后的计划
   async savePlan() {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     let plan = AppStorage.get<PlanData>('studyPlan');
 
     if (plan && currentUser) {
+      // 更新对象属性
       plan.dailyNew = Math.round(this.dailyNew);
       plan.dailyReview = Math.round(this.dailyReview);
       plan.studyMode = this.studyMode;
+      // 更新内存态：覆盖 AppStorage
       AppStorage.setOrCreate('studyPlan', plan);
       await UserManager.saveUserPlan(getContext(this), currentUser.userId, plan);
     }

@@ -16,10 +16,9 @@ export class Ebbinghaus {
    * @returns 更新后的记忆进度
    */
   static calculateNextReview(progress: WordProgress, isKnown: boolean): WordProgress {
-    // 质量评分：4表示认识(Good)，0表示完全不认识(Blackout)
+    // 质量评分：4表示认识，0表示完全不认识
     let grade = isKnown ? 4 : 0;
 
-    // ArkTS 不允许对象展开运算符，所以手动赋值创建新对象
     let newProgress: WordProgress = {
       wordId: progress.wordId,
       repetition: progress.repetition,

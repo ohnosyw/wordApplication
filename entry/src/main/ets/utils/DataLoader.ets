@@ -15,7 +15,7 @@ export class DataLoader {
       // 1. 获取资源管理器
       let rm = context.resourceManager;
 
-      // 2. 读取 rawfile 文件内容 (返回 Uint8Array)
+      // 2. 读取 rawfile 文件内容
       let rawData = await rm.getRawFileContent(fileName);
 
       // 3. 将字节数组解码为字符串

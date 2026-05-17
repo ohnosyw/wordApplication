@@ -6,8 +6,10 @@ import { UserManager, UserInfo } from '../utils/UserManager';
 @Entry
 @Component
 struct EditProfilePage {
+  // 绑定输入框中的内容
   @State newName: string = '';
 
+  // 用户进入修改页面时，输入框里应该默认显示他现在的名字
   aboutToAppear() {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (currentUser) {
@@ -17,13 +19,13 @@ struct EditProfilePage {
 
   build() {
     Column() {
-      // 🌟 顶部标题栏 (透明底色融入背景)
+      // 自定义顶部标题栏
       Row() {
         Image($r('app.media.ic_back')).width(24).height(24)
           .onClick(() => router.back())
         Text('修改昵称').fontSize(20).fontWeight(FontWeight.Bold).fontColor('#333').margin({ left: 16 })
         Blank()
-        // 🌟 改为主题橙色
+
         Text('保存').fontSize(16).fontColor('#FF9800').fontWeight(FontWeight.Medium)
           .onClick(async () => {
             if (this.newName.trim() === '') {
@@ -38,7 +40,6 @@ struct EditProfilePage {
           })
       }.width('100%').height(56).padding({ left: 20, right: 20 })
 
-      // 🌟 输入区 (采用淡灰卡片风格)
       Column() {
         TextInput({ text: this.newName, placeholder: '请输入新昵称' })
           .width('100%')
@@ -59,7 +60,6 @@ struct EditProfilePage {
 
     }
     .width('100%').height('100%')
-    // 🌟 全局鹅黄渐变背景
     .linearGradient({
       direction: GradientDirection.Bottom,
       colors: [['#FFFDE7', 0.0], ['#FFF9C4', 0.3], ['#F5F5F5', 1.0]]

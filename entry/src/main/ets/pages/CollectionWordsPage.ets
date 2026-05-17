@@ -5,7 +5,7 @@ import { DataLoader } from '../utils/DataLoader'
 import { WordEntry, TransItem, SentenceItem } from '../model/WordModel'
 import { CollectionManager } from '../utils/CollectionManager'
 
-// 1. 单次任务量设置弹窗
+// 单次任务量设置弹窗
 @CustomDialog
 struct LimitSettingDialog {
   controller: CustomDialogController
@@ -68,7 +68,7 @@ struct LimitSettingDialog {
   }
 }
 
-// 2. 一键清空收藏词弹窗
+// 一键清空收藏词弹窗
 @CustomDialog
 struct ClearCollectionDialog {
   controller: CustomDialogController
@@ -104,7 +104,7 @@ struct ClearCollectionDialog {
   }
 }
 
-// 3. 精美的单词详情弹窗
+// 精美的单词详情弹窗
 @CustomDialog
 struct WordDetailDialog {
   controller: CustomDialogController
@@ -166,14 +166,15 @@ struct CollectionWordsPage {
   @State words: WordEntry[] = [];
   @State isLoading: boolean = true;
 
-  @State isMasked: boolean = false;
-  @State dailyLimit: number = 20;
+  @State isMasked: boolean = false;// 是否开启“遮挡释义”模式
+  @State dailyLimit: number = 20;// 单次特训上限
 
-  @State isEditMode: boolean = false;
-  @State selectedWordIds: string[] = [];
+  @State isEditMode: boolean = false;// 是否处于“管理模式”
+  @State selectedWordIds: string[] = [];// 当前勾选准备删除的单词 ID
 
-  @State currentSelectedWord: WordEntry | null = null;
+  @State currentSelectedWord: WordEntry | null = null;// 用于传递给详情弹窗的数据源
 
+  // 声明弹窗控制器
   detailDialogController: CustomDialogController = new CustomDialogController({
     builder: WordDetailDialog({ word: this.currentSelectedWord }),
     autoCancel: true,
@@ -210,10 +211,12 @@ struct CollectionWordsPage {
     alignment: DialogAlignment.Center
   })
 
+  // 页面回到前台时重新加载数据
   async onPageShow() {
     await this.loadData();
   }
 
+  // 核心数据装载逻辑
   async loadData() {
     this.isLoading = true;
     let params = router.getParams() as Record<string, string | string[]>;
@@ -222,21 +225,27 @@ struct CollectionWordsPage {
       this.bookName = params['bookName'] as string;
 
       let cols = await CollectionManager.getCollections(getContext(this));
+
+      // 如果这本书有收藏 → 取出收藏的单词ID数组 & 每日学习限制
       if (cols[this.bookId]) {
         this.wordIds = cols[this.bookId].wordIds;
         this.dailyLimit = cols[this.bookId].dailyLimit || 20;
       }
 
       let allWords = await DataLoader.loadWordBook(getContext(this), `${this.bookId}.json`);
+      // 只保留“被收藏”的单词
       this.words = allWords.filter(w => this.wordIds.includes(w.content.word.wordId));
     }
     this.isLoading = false;
   }
 
+  // 批量移除选中的单词
   async removeSelectedWords() {
     if (this.selectedWordIds.length === 0) return;
 
     this.isLoading = true;
+
+    // 遍历所有选中的单词，逐个取消收藏
     for (let wid of this.selectedWordIds) {
       await CollectionManager.toggleCollection(getContext(this), this.bookId, this.bookName, wid);
     }
@@ -247,6 +256,7 @@ struct CollectionWordsPage {
     await this.loadData();
   }
 
+  // 设置菜单面板
   @Builder SettingsMenu() {
     Menu() {
       MenuItem({ content: '移除单词' })
@@ -268,6 +278,7 @@ struct CollectionWordsPage {
 
   build() {
     Column() {
+      // 动态顶部栏
       Row() {
         Image($r('app.media.ic_back')).width(24).height(24).onClick(() => {
           if (this.isEditMode) {
@@ -298,6 +309,7 @@ struct CollectionWordsPage {
         }
       }.width('100%').padding({ left: 20, right: 20, top: 20, bottom: 10 })
 
+      // 状态渲染
       if (this.isLoading) {
         Column() {
           LoadingProgress().width(50).height(50).color('#FFCA28')
@@ -309,6 +321,7 @@ struct CollectionWordsPage {
           Text('收藏夹是空的哦').fontSize(16).fontColor('#999')
         }.width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else {
+        // 单词列表视图
         List({ space: 12 }) {
           ForEach(this.words, (word: WordEntry) => {
             ListItem() {
@@ -344,6 +357,7 @@ struct CollectionWordsPage {
             }
             .onClick(() => {
               if (this.isEditMode) {
+                // 如果是管理模式：点击则反转该单词的勾选状态
                 let wid = word.content.word.wordId;
                 if (this.selectedWordIds.includes(wid)) {
                   this.selectedWordIds = this.selectedWordIds.filter(id => id !== wid);
@@ -351,6 +365,7 @@ struct CollectionWordsPage {
                   this.selectedWordIds.push(wid);
                 }
               } else {
+                // 如果是正常模式：点击呼出单词详情弹窗
                 this.currentSelectedWord = word;
                 this.detailDialogController.open();
               }
@@ -358,8 +373,8 @@ struct CollectionWordsPage {
           })
         }.width('90%').layoutWeight(1).margin({ top: 10, bottom: 15 })
 
+        // 底部按钮
         if (this.isEditMode) {
-          // 🌟 核心修改：将突兀的红色改为温馨的淡黄底+橙色字
           Button(`移除选中 (${this.selectedWordIds.length})`)
             .width('90%').height(50).fontSize(18).fontWeight(FontWeight.Medium).margin({ bottom: 30 })
             .backgroundColor(this.selectedWordIds.length > 0 ? '#FFF8E1' : '#F5F5F5')

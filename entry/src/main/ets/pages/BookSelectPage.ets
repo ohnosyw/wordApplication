@@ -4,6 +4,7 @@ import promptAction from '@ohos.promptAction'
 import { PlanData } from '../model/StudyPlan'
 import { UserManager, UserInfo } from '../utils/UserManager';
 
+// 定义列表项中每一本词书需要的展示信息
 interface BookInfo {
   id: string
   name: string
@@ -102,13 +103,16 @@ struct BookSelectPage {
     }
   ]
 
+  // 组件即将出现时触发
   aboutToAppear() {
+    // 从全局内存 AppStorage 中拉取当前的用户的学习计划
     let currentPlan = AppStorage.get<PlanData>('studyPlan');
     if (currentPlan) {
       this.selectedBookId = currentPlan.bookId;
     }
   }
 
+  // 页面主结构
   build() {
     Column() {
       // 标题栏
@@ -144,7 +148,6 @@ struct BookSelectPage {
       .width('100%')
       .layoutWeight(1)
       .backgroundColor(Color.White)
-      // 分割线
       .divider({ strokeWidth: 0.5, color: '#F0F0F0', startMargin: 84, endMargin: 20 })
     }
     .width('100%')
@@ -152,6 +155,7 @@ struct BookSelectPage {
     .backgroundColor(Color.White)
   }
 
+  // 渲染单个词书卡片的 UI 模块
   @Builder
   createBookRow(book: BookInfo) {
     Row() {
@@ -188,14 +192,14 @@ struct BookSelectPage {
 
           Blank()
 
-          // 🌟 核心修改：全新设计的“学习中”高级灰标签
+          // 只有当前书的 ID 等于选中的 ID，才渲染这个高级灰标签
           if (this.selectedBookId === book.id) {
             Text('学习中')
-              .fontSize(12) // 稍微调大一号
-              .fontWeight(FontWeight.Bold) // 字体加粗，增强存在感
-              .fontColor('#666666') // 深灰色文字
-              .padding({ left: 8, right: 8, top: 3, bottom: 3 }) // 增加内边距让标签更饱满
-              .backgroundColor('#E6E6E6') // 明显的浅灰底色，与深灰文字形成高级对比
+              .fontSize(12)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#666666')
+              .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+              .backgroundColor('#E6E6E6')
               .borderRadius(4)
               .margin({ right: 8 })
           }
@@ -229,13 +233,14 @@ struct BookSelectPage {
     }
     .width('100%')
     .padding({ left: 20, right: 20, top: 18, bottom: 18 })
-    // 去掉整行的底色变化，保持列表的纯净感
     .backgroundColor(Color.White)
     .onClick(() => {
+      // 点击整行触发词书切换逻辑
       this.selectBook(book)
     })
   }
 
+  // 处理词书的选中与切换
   async selectBook(book: BookInfo) {
     let currentUser = AppStorage.get<UserInfo>('currentUser');
     if (!currentUser) {
@@ -246,6 +251,7 @@ struct BookSelectPage {
     this.selectedBookId = book.id;
     let currentPlan = AppStorage.get<PlanData>('studyPlan');
 
+    // 构建新的学习计划
     let updatedPlan: PlanData = {
       dailyNew: currentPlan ? currentPlan.dailyNew : 20,
       dailyReview: currentPlan ? currentPlan.dailyReview : 50,
@@ -255,9 +261,11 @@ struct BookSelectPage {
       totalWords: book.totalWords
     };
 
+    // 数据同步与持久化
     AppStorage.setOrCreate('studyPlan', updatedPlan);
     await UserManager.saveUserPlan(getContext(this), currentUser.userId, updatedPlan);
 
+    // 交互反馈
     promptAction.showToast({ message: '已选择: ' + book.name, duration: 1500 });
     setTimeout(() => { router.back() }, 500);
   }

@@ -6,35 +6,37 @@ import { UserManager, UserInfo } from '../utils/UserManager';
 @Entry
 @Component
 struct RegisterPage {
+  // 实时保存用户的输入内容
   @State userId: string = '';
   @State username: string = '';
   @State pass: string = '';
 
   build() {
     Column() {
-      // 顶部返回
+      // 顶部导航栏
       Row() {
         Image($r('app.media.ic_back')).width(24).height(24).onClick(() => router.back())
       }.width('100%').padding(20)
 
-      // 🌟 鸭鸭迎新
       Image($r('app.media.ic_duck_active')).width(80).height(80).margin({ top: 10 })
       Text('领养你的专属背词鸭').fontSize(26).fontWeight(FontWeight.Bold).fontColor('#333').margin({ top: 15, bottom: 40 })
 
-      // 🌟 表单卡片
       Column() {
+        // 账号输入框
         TextInput({ placeholder: '设置账号 (如手机号)' })
           .width('100%').height(50).backgroundColor(Color.Transparent).placeholderColor('#999')
           .onChange((val) => this.userId = val)
 
         Divider().color('#EEEEEE').margin({ left: 15, right: 15 })
 
+        // 昵称输入框
         TextInput({ placeholder: '给鸭鸭取个昵称吧' })
           .width('100%').height(50).backgroundColor(Color.Transparent).placeholderColor('#999')
           .onChange((val) => this.username = val)
 
         Divider().color('#EEEEEE').margin({ left: 15, right: 15 })
 
+        // 密码输入框
         TextInput({ placeholder: '设置密码' })
           .width('100%').height(50).type(InputType.Password).backgroundColor(Color.Transparent).placeholderColor('#999')
           .onChange((val) => this.pass = val)
@@ -43,11 +45,12 @@ struct RegisterPage {
       .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
       .margin({ bottom: 40 })
 
-      // 🌟 主题按钮
+      // 注册提交按钮
       Button('立即注册')
         .width('85%').height(50).backgroundColor('#FFCA28').fontColor('#333')
         .fontSize(18).fontWeight(FontWeight.Medium)
         .onClick(async () => {
+          // 避免将不合法的空数据提交给持久化层
           if (!this.userId || !this.username || !this.pass) {
             promptAction.showToast({ message: '请填写完整信息' });
             return;

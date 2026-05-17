@@ -5,6 +5,7 @@ import { CollectionManager, CollectionData } from '../utils/CollectionManager'
 @Entry
 @Component
 struct CollectionsPage {
+  // 存储从本地获取的全量收藏数据和词书 ID 列表
   @State collections: Record<string, CollectionData> = {};
   @State bookIds: string[] = [];
 
@@ -21,14 +22,16 @@ struct CollectionsPage {
     this.loadData();
   }
 
+  // 异步加载本地 Preferences 中的收藏数据
   async loadData() {
     this.collections = await CollectionManager.getCollections(getContext(this));
+    // 提取所有有收藏记录的词书 ID
     this.bookIds = Object.keys(this.collections);
   }
 
   build() {
     Column() {
-      // 顶部导航栏 (透明化配合背景)
+      // 顶部导航栏
       Row() {
         Image($r('app.media.ic_back')).width(24).height(24).onClick(() => { router.back() })
         Text('我的收藏本').fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 15 }).fontColor('#333')
@@ -45,7 +48,6 @@ struct CollectionsPage {
           ForEach(this.bookIds, (bookId: string) => {
             ListItem() {
               Row() {
-                // 🌟 核心修改：莫兰迪色块图标
                 Column() {
                   Text(this.collections[bookId].bookName.substring(0, 2))
                     .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Color.White)
@@ -64,6 +66,7 @@ struct CollectionsPage {
               .width('100%').padding(18).backgroundColor('#F7F7F7').borderRadius(15)
               .shadow({ radius: 8, color: '#0A000000', offsetX: 0, offsetY: 4 })
               .onClick(() => {
+                // 跳转到生词详情页
                 router.pushUrl({
                   url: 'pages/CollectionWordsPage',
                   params: { bookId: bookId, bookName: this.collections[bookId].bookName, wordIds: this.collections[bookId].wordIds }

@@ -3,7 +3,7 @@ import router from '@ohos.router';
 import promptAction from '@ohos.promptAction';
 import { UserInfo, UserManager } from '../utils/UserManager';
 
-// 1. 自定义注销账号弹窗
+// 自定义注销账号弹窗
 @CustomDialog
 struct DeleteAccountDialog {
   controller: CustomDialogController
@@ -41,6 +41,7 @@ struct DeleteAccountDialog {
 
 @Component
 export struct MineHome {
+  // 全局状态驱动：响应式接收用户信息
   @StorageLink('currentUser') user: UserInfo | null = null;
 
   deleteAccountDialogController: CustomDialogController = new CustomDialogController({
@@ -52,7 +53,7 @@ export struct MineHome {
     alignment: DialogAlignment.Center
   })
 
-  // 🌟 核心修复：更严谨的三段式状态判断
+  // 动态计算今日的打卡状态
   private getTodayStatus(): 'unstarted' | 'learning' | 'completed' {
     if (!this.user) return 'unstarted';
     let today = new Date().toDateString();
@@ -109,7 +110,6 @@ export struct MineHome {
           // --- 2. 连续打卡卡片 ---
           Column() {
             Row() {
-              // 🌟 只有真正 completed 时，鸭子才会换成 active！
               Image(this.getTodayStatus() === 'completed' ? $r('app.media.ic_duck_active') : $r('app.media.ic_duck_sleep'))
                 .width(30).height(30).margin({ right: 10 })
                 .animation({ duration: 400, curve: Curve.EaseInOut })
@@ -117,7 +117,7 @@ export struct MineHome {
               Text('连续打卡').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333')
               Blank()
 
-              // 🌟 动态状态标签
+              // 动态状态标签
               Text(this.getTodayStatus() === 'completed' ? '今日已达标' : (this.getTodayStatus() === 'learning' ? '今日待完成' : '今日待叫醒'))
                 .fontSize(11)
                 .fontColor(this.getTodayStatus() === 'completed' ? '#FF9800' : (this.getTodayStatus() === 'learning' ? '#2196F3' : '#999'))
@@ -131,7 +131,6 @@ export struct MineHome {
               Text(' 天').fontSize(16).fontColor('#666').margin({ bottom: 8, left: 4 })
             }.alignItems(VerticalAlign.Bottom).width('100%')
 
-            // 🌟 更细腻的情感互动文案
             Text(
               this.getTodayStatus() === 'completed' ? '太棒了！今天也准时把鸭鸭叫醒完成任务了鸭！' :
                 (this.getTodayStatus() === 'learning' ? '鸭鸭还在梦里，快去点下最后一步打卡把它叫醒吧！' : '鸭鸭还在梦游，快去背几个单词把它叫醒鸭！')
